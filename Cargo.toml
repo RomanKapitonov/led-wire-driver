@@ -1,0 +1,15 @@
+[package]
+name = "led-wire-driver"
+version = "0.1.0"
+edition.workspace = true
+
+[features]
+default = ["pack-td-none", "pack-sq-none"]
+pack-td-none = []
+pack-td-bayer = []
+pack-sq-none = []
+pack-sq-bayer = []
+
+[dependencies]
+defmt = { workspace = true }
+heapless = { workspace = true }

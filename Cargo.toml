@@ -11,5 +11,4 @@ pack-sq-none = []
 pack-sq-bayer = []
 
 [dependencies]
-defmt = { workspace = true }
 heapless = { workspace = true }

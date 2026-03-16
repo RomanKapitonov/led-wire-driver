@@ -4,7 +4,7 @@
 //!
 //! The intended usage story is:
 //! - setup through [`Driver::new`] and [`Driver::configure_prepared`]
-//! - runtime channel writes through `driver.channel(channel).write_rgb24(...)`
+//! - runtime channel writes through `driver.channel(channel).write_rgb48(...)`
 //! - submission through [`Driver::commit`]
 //! - host/backend ingress through [`crate::host::DriverHostIngress`]
 //! - backend implementation contracts through [`backend`]
@@ -20,7 +20,7 @@
 //! Minimal usage shape:
 //! ```rust,ignore
 //! use crate::api::{
-//!     Driver, PreparedSetup, Rgb24,
+//!     Driver, PreparedSetup, Rgb48,
 //! };
 //!
 //! let setup: PreparedSetup = /* produced by preparation/bootstrap boundary */;
@@ -33,7 +33,7 @@
 //!     .unwrap();
 //! driver
 //!     .channel(channel)?
-//!     .write_rgb24(&[Rgb24 { r: 255, g: 0, b: 0 }])?;
+//!     .write_rgb48(&[Rgb48 { r: 65535, g: 0, b: 0 }])?;
 //! driver.commit()?;
 //! driver.service()?;
 //! # Ok::<(), ()>(())
@@ -50,6 +50,6 @@ mod types;
 
 pub use driver::{Configuring, Driver, Ready};
 pub use types::{
-    BackendChannelId, ChannelId, ConfiguredChannels, DriverInitError, FinalizeError,
-    PixelLayout, PreparedSetup, RegisterError, Rgb24, RuntimeError,
+    BackendChannelId, ChannelId, ConfiguredChannels, DriverInitError, FinalizeError, PixelLayout,
+    PreparedSetup, RegisterError, Rgb48, RuntimeError,
 };

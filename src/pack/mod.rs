@@ -12,7 +12,7 @@ mod pipeline;
 mod spatial;
 mod temporal;
 
-pub(crate) use convert::{IsOff, ToWire};
+pub(crate) use convert::WireColor;
 pub(crate) use error::PackError;
 pub(crate) use pipeline::pack_into_bytes;
 pub(crate) use spatial::SpatialQuantizer;

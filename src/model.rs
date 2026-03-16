@@ -9,10 +9,10 @@ pub enum PixelLayout {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Rgb24 {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
+pub struct Rgb48 {
+    pub r: u16,
+    pub g: u16,
+    pub b: u16,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

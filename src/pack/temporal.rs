@@ -1,12 +1,15 @@
 use crate::engine::types::FrameEpoch;
 
+#[cfg_attr(feature = "pack-td-none", allow(dead_code))]
 pub trait TemporalDither {
     fn offset(&self, frame: FrameEpoch) -> i16;
 }
 
+#[cfg(feature = "pack-td-none")]
 #[derive(Default)]
 pub struct NoTemporalDither;
 
+#[cfg(feature = "pack-td-none")]
 impl TemporalDither for NoTemporalDither {
     fn offset(&self, _frame: FrameEpoch) -> i16 {
         0

@@ -10,10 +10,10 @@ use super::{
     EngineError, LedEngine,
     types::{ChannelMask, WireSpan, WireTarget, WritePlan},
 };
+use crate::DRIVER_MAX_CHANNELS;
 use crate::api::backend::{
     AcquireWrite, BackendError, BackendEvent, BackendSignal, LedBackend, StartTransfer,
 };
-use crate::DRIVER_MAX_CHANNELS;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) enum EngineLifecycle {
@@ -147,14 +147,16 @@ where
                 .ok_or(EngineError::Backend(BackendError::InvalidBinding))?
         };
 
-        self.backend.publish_write(token).map_err(EngineError::Backend)?;
+        self.backend
+            .publish_write(token)
+            .map_err(EngineError::Backend)?;
 
         let max_channels = self.max_channels();
         let ready = self.state.ready_mut()?;
         ready.prepared_tokens[channel_index] = None;
-        ready.dirty_mask = self
-            .channels
-            .mark_written(channel_index, max_channels, ready.dirty_mask)?;
+        ready.dirty_mask =
+            self.channels
+                .mark_written(channel_index, max_channels, ready.dirty_mask)?;
         Ok(())
     }
 
@@ -259,22 +261,22 @@ where
         }
 
         let pending_mask = ChannelMask::from_bits(
-            ready.pending_mask.bits()
-                & self.channels.registered_channel_mask(max_channels)?.bits(),
+            ready.pending_mask.bits() & self.channels.registered_channel_mask(max_channels)?.bits(),
         );
         if pending_mask.is_empty() {
             return Ok(());
         }
 
-        match self.backend.submit_channels(pending_mask.bits()).map_err(EngineError::Backend)? {
+        match self
+            .backend
+            .submit_channels(pending_mask.bits())
+            .map_err(EngineError::Backend)?
+        {
             StartTransfer::Started => {
                 let ready = match self.state.ready_mut() {
                     Ok(ready) => ready,
                     Err(err) => {
-                        debug_assert!(
-                            false,
-                            "submit start observed with non-ready engine state"
-                        );
+                        debug_assert!(false, "submit start observed with non-ready engine state");
                         return Err(err);
                     }
                 };

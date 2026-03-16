@@ -1,6 +1,6 @@
 use crate::api::backend::BackendError;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, defmt::Format)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum EngineError {
     // Channel registration / addressing rejections.
     ChannelOutOfRange,

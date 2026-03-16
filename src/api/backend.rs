@@ -32,7 +32,7 @@
 
 use crate::model::PixelLayout;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, defmt::Format)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BackendError {
     /// Submission shape/identity is invalid for this backend instance.
     InvalidBinding,

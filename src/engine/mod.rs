@@ -32,8 +32,8 @@ use self::{
     runtime::{EngineLifecycle, EngineState, ReadyState},
     types::ChannelMask,
 };
-use crate::api::backend::{BackendChannelSpec, BackendError, LedBackend};
 use crate::DRIVER_MAX_CHANNELS;
+use crate::api::backend::{BackendChannelSpec, BackendError, LedBackend};
 
 pub struct LedEngine<B>
 where
@@ -59,10 +59,7 @@ where
             "LedEngine supports at most {} channels because ChannelMask is u32",
             ChannelMask::CAPACITY_BITS
         );
-        let max_channels = backend
-            .capabilities()
-            .max_channels
-            .min(DRIVER_MAX_CHANNELS);
+        let max_channels = backend.capabilities().max_channels.min(DRIVER_MAX_CHANNELS);
         Self {
             backend,
             max_channels,
@@ -97,7 +94,8 @@ where
         }
         let spec = BackendChannelSpec {
             channel: channel.backend_channel().as_u8(),
-            pixels: u16::try_from(channel.len_pixels()).map_err(|_| EngineError::ChannelOutOfRange)?,
+            pixels: u16::try_from(channel.len_pixels())
+                .map_err(|_| EngineError::ChannelOutOfRange)?,
             layout: channel.layout(),
         };
         self.backend

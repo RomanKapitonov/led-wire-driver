@@ -1,7 +1,7 @@
 use crate::DRIVER_MAX_CHANNELS;
 use heapless::Vec;
 
-pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb24};
+pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb48};
 
 /// Structural setup data that has already been validated by the preparation
 /// boundary (bootstrap/system) and is ready for driver configuration.
@@ -66,16 +66,14 @@ impl PreparedSetup {
     pub(crate) fn iter(
         &self,
     ) -> impl Iterator<Item = (ChannelId, BackendChannelId, u16, PixelLayout)> + '_ {
-        self.bindings
-            .iter()
-            .map(|binding| {
-                (
-                    binding.logical_channel,
-                    binding.backend_channel,
-                    binding.pixels,
-                    binding.layout,
-                )
-            })
+        self.bindings.iter().map(|binding| {
+            (
+                binding.logical_channel,
+                binding.backend_channel,
+                binding.pixels,
+                binding.layout,
+            )
+        })
     }
 }
 
@@ -139,4 +137,3 @@ pub enum RuntimeError {
     LengthMismatch,
     Backend,
 }
-

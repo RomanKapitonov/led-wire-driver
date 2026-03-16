@@ -1,10 +1,13 @@
+#[cfg_attr(feature = "pack-sq-none", allow(dead_code))]
 pub trait SpatialQuantizer {
     fn quantize(&mut self, value: u16, index: usize) -> u8;
 }
 
+#[cfg(feature = "pack-sq-none")]
 #[derive(Default)]
 pub struct NoSpatialQuantizer;
 
+#[cfg(feature = "pack-sq-none")]
 impl SpatialQuantizer for NoSpatialQuantizer {
     fn quantize(&mut self, value: u16, _index: usize) -> u8 {
         (value >> 8) as u8

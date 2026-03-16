@@ -46,9 +46,8 @@ impl WireTarget {
     pub fn with_mut_bytes<R>(self, f: impl FnOnce(&mut [u8]) -> R) -> R {
         // SAFETY: pointer/length validity is guaranteed by backend write-grant
         // ownership and `WireTarget::from_span` construction checks.
-        let bytes = unsafe {
-            core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len_bytes as usize)
-        };
+        let bytes =
+            unsafe { core::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len_bytes as usize) };
         f(bytes)
     }
 }

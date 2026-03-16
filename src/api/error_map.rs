@@ -1,7 +1,4 @@
-use crate::{
-    api::backend::BackendError,
-    engine::EngineError,
-};
+use crate::{api::backend::BackendError, engine::EngineError};
 
 use super::types::{DriverInitError, FinalizeError, RegisterError, RuntimeError};
 
@@ -15,7 +12,9 @@ pub(super) fn map_driver_init_error(err: EngineError) -> DriverInitError {
 pub(super) fn map_register_bind_error(err: EngineError) -> RegisterError {
     match err {
         EngineError::ChannelAlreadyRegistered => RegisterError::DuplicateChannel,
-        EngineError::ChannelOutOfRange | EngineError::InvalidWireSpan => RegisterError::InvalidBinding,
+        EngineError::ChannelOutOfRange | EngineError::InvalidWireSpan => {
+            RegisterError::InvalidBinding
+        }
         EngineError::Backend(BackendError::InvalidBinding) => RegisterError::InvalidBinding,
         EngineError::Backend(BackendError::TransportFault { .. }) => RegisterError::Backend,
         _ => unexpected_register_error(err, "engine.register_channel"),
@@ -33,7 +32,9 @@ pub(super) fn map_finalize_error(err: EngineError) -> FinalizeError {
 pub(super) fn map_runtime_write_prepare_error(err: EngineError) -> RuntimeError {
     match err {
         EngineError::WriteBusy => RuntimeError::Busy,
-        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => RuntimeError::InvalidChannel,
+        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => {
+            RuntimeError::InvalidChannel
+        }
         EngineError::InvalidWireSpan => RuntimeError::Backend,
         EngineError::Backend(_) => RuntimeError::Backend,
         _ => unexpected_runtime_error(err, "engine.prepare_channel_write"),
@@ -50,7 +51,9 @@ pub(super) fn map_runtime_write_pack_error(err: EngineError) -> RuntimeError {
 
 pub(super) fn map_runtime_mark_written_error(err: EngineError) -> RuntimeError {
     match err {
-        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => RuntimeError::InvalidChannel,
+        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => {
+            RuntimeError::InvalidChannel
+        }
         EngineError::Backend(_) => RuntimeError::Backend,
         _ => unexpected_runtime_error(err, "engine.mark_channel_written"),
     }
@@ -58,7 +61,9 @@ pub(super) fn map_runtime_mark_written_error(err: EngineError) -> RuntimeError {
 
 pub(super) fn map_runtime_commit_error(err: EngineError) -> RuntimeError {
     match err {
-        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => RuntimeError::InvalidChannel,
+        EngineError::ChannelOutOfRange | EngineError::ChannelNotRegistered => {
+            RuntimeError::InvalidChannel
+        }
         _ => unexpected_runtime_error(err, "engine.submit_dirty"),
     }
 }
@@ -74,8 +79,7 @@ fn unexpected_register_error(err: EngineError, operation: &'static str) -> Regis
     debug_assert!(
         false,
         "unexpected register-phase engine error in {}: {:?}",
-        operation,
-        err
+        operation, err
     );
     RegisterError::Backend
 }
@@ -84,8 +88,7 @@ fn unexpected_driver_init_error(err: EngineError, operation: &'static str) -> Dr
     debug_assert!(
         false,
         "unexpected init-phase engine error in {}: {:?}",
-        operation,
-        err
+        operation, err
     );
     DriverInitError::Backend
 }
@@ -94,8 +97,7 @@ fn unexpected_finalize_error(err: EngineError, operation: &'static str) -> Final
     debug_assert!(
         false,
         "unexpected finalize-phase engine error in {}: {:?}",
-        operation,
-        err
+        operation, err
     );
     FinalizeError::Backend
 }
@@ -104,8 +106,7 @@ fn unexpected_runtime_error(err: EngineError, operation: &'static str) -> Runtim
     debug_assert!(
         false,
         "unexpected runtime-phase engine error in {}: {:?}",
-        operation,
-        err
+        operation, err
     );
     RuntimeError::Backend
 }

@@ -1,4 +1,5 @@
 #![no_std]
+#![no_main]
 
 //! LED wire driver.
 //!
@@ -6,7 +7,7 @@
 //! - [`api`]: independent driver boundary.
 //! - [`host`]: integration-facing backend signal/event ingress boundary.
 //! - setup phase: [`api::Driver::new`] -> `configure_prepared` -> `finalize`.
-//! - runtime phase: channel writes via `driver.channel(channel)?.write_rgb24(...)`,
+//! - runtime phase: channel writes via `driver.channel(channel)?.write_rgb48(...)`,
 //!   then `commit`, then periodic `service`.
 //!
 //! Internal layers:

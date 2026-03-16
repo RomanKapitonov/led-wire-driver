@@ -50,7 +50,11 @@ pub(crate) struct ChannelState {
 }
 
 impl ChannelState {
-    pub const fn new(backend_channel: BackendChannelId, len_pixels: usize, layout: PixelLayout) -> Self {
+    pub const fn new(
+        backend_channel: BackendChannelId,
+        len_pixels: usize,
+        layout: PixelLayout,
+    ) -> Self {
         Self {
             meta: ChannelMeta::new(backend_channel, len_pixels, layout),
             runtime: ChannelRuntime::new(),

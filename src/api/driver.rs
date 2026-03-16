@@ -13,13 +13,13 @@ use crate::{
 
 use super::{
     error_map::{
-        map_driver_init_error, map_finalize_error, map_register_bind_error, map_runtime_commit_error,
-        map_runtime_mark_written_error, map_runtime_service_error, map_runtime_write_pack_error,
-        map_runtime_write_prepare_error,
+        map_driver_init_error, map_finalize_error, map_register_bind_error,
+        map_runtime_commit_error, map_runtime_mark_written_error, map_runtime_service_error,
+        map_runtime_write_pack_error, map_runtime_write_prepare_error,
     },
     types::{
         Channel, ConfiguredChannels, DriverInitError, FinalizeError, PreparedSetup, RegisterError,
-        Rgb24, RuntimeError,
+        Rgb48, RuntimeError,
     },
 };
 
@@ -136,14 +136,14 @@ impl<'a, B> ChannelWriter<'a, B>
 where
     B: LedBackend,
 {
-    pub fn write_rgb24(&mut self, pixels: &[Rgb24]) -> Result<(), RuntimeError> {
+    pub fn write_rgb48(&mut self, pixels: &[Rgb48]) -> Result<(), RuntimeError> {
         let plan = self
             .driver
             .engine
             .prepare_channel_write(self.channel_index)
             .map_err(map_runtime_write_prepare_error)?;
 
-        LedEngine::<B>::write_slice_to_plan::<Rgb24, ActiveTemporalDither, ActiveSpatialQuantizer>(
+        LedEngine::<B>::write_slice_to_plan::<Rgb48, ActiveTemporalDither, ActiveSpatialQuantizer>(
             pixels,
             plan.frame_phase,
             plan,

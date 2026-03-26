@@ -87,9 +87,13 @@ pub enum StartTransfer {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BackendCapabilities {
+    /// Maximum number of backend channels the driver may register.
     pub max_channels: usize,
+    /// Structural per-channel byte limit enforced during registration staging.
+    ///
+    /// The driver computes `pixels * 3` for each prepared binding and rejects
+    /// configurations that exceed this limit before backend mutation.
     pub max_bytes_per_channel: Option<u32>,
-    pub requires_dma_accessible_memory: bool,
 }
 
 pub trait LedBackend {

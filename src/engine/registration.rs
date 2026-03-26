@@ -80,10 +80,8 @@ impl ChannelState {
         self.runtime.frame_phase
     }
 
-    pub fn advance_phase_if_dirty(&mut self, dirty: bool) {
-        if dirty {
-            self.runtime.frame_phase = self.runtime.frame_phase.wrapping_add(1);
-        }
+    pub fn advance_phase(&mut self) {
+        self.runtime.frame_phase = self.runtime.frame_phase.wrapping_add(1);
     }
 }
 
@@ -261,14 +259,13 @@ impl RegistrationTable {
         Ok(ChannelMask::from_bits(dirty_mask.bits() | bit.bits()))
     }
 
-    pub fn advance_phase_if_dirty(
+    pub fn advance_phase(
         &mut self,
         channel_index: usize,
         max_channels: usize,
-        dirty: bool,
     ) -> Result<(), EngineError> {
         let record = self.record_mut(channel_index, max_channels)?;
-        record.advance_phase_if_dirty(dirty);
+        record.advance_phase();
         Ok(())
     }
 

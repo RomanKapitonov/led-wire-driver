@@ -19,7 +19,9 @@
 //! - `InFlight` is entered only after backend returns `StartTransfer::Started`
 //! - busy start does not clear pending submissions
 //! - driver runtime never owns transport slot/buffer strategy
-//! - channel phase advances only for committed dirty channels
+//! - channel phase is intended to advance only for submission batches the
+//!   backend actually accepts; runtime code is responsible for enforcing that
+//!   accepted-submit rule
 
 mod error;
 mod mask;
@@ -36,10 +38,7 @@ use self::{
 };
 use crate::{
     DRIVER_MAX_CHANNELS,
-    api::{
-        backend::LedBackend,
-        types::PreparedSetup,
-    },
+    api::{backend::LedBackend, types::PreparedSetup},
 };
 
 pub struct LedEngine<B>

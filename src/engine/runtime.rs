@@ -3,6 +3,7 @@
 //! Snapshot transfer invariants:
 //! - transfer enters `InFlight` only after `StartTransfer::Started`
 //! - busy start keeps pending channels intact for retry
+//! - channel phase advances only for accepted submission batches
 //! - completion meaning is backend-owned; engine only reacts to
 //!   `BackendEvent::TransferComplete`
 //! - backend contract mismatches are reported distinctly from transport faults
@@ -26,6 +27,7 @@ pub(super) enum TransferState {
     /// Backend accepted transfer start and completion is pending.
     InFlight {
         dma_complete_pending: bool,
+        /// Exact accepted channel batch currently owned by transport.
         submitted_mask: ChannelMask,
     },
 }
@@ -138,7 +140,6 @@ where
     }
 
     pub fn submit_dirty(&mut self) -> Result<(), EngineError> {
-        let max_channels = self.max_channels();
         let dirty = self.state.ready()?.dirty_mask;
         if dirty.is_empty() {
             return Ok(());
@@ -148,14 +149,6 @@ where
             let ready = self.state.ready_mut()?;
             ready.pending_mask = ChannelMask::from_bits(ready.pending_mask.bits() | dirty.bits());
             ready.dirty_mask = ChannelMask::ZERO;
-        }
-
-        for channel_index in 0..max_channels {
-            let is_dirty = (dirty.bits() & (1u32 << channel_index)) != 0;
-            if is_dirty {
-                self.channels
-                    .advance_phase_if_dirty(channel_index, max_channels, true)?;
-            }
         }
         Ok(())
     }
@@ -194,7 +187,7 @@ where
             };
             if let TransferState::InFlight {
                 dma_complete_pending: true,
-                submitted_mask: _,
+                submitted_mask: _submitted_mask,
             } = ready.transfer
             {
                 ready.transfer = TransferState::Idle;
@@ -250,19 +243,31 @@ where
             .map_err(EngineError::Backend)?
         {
             StartTransfer::Started => {
-                let ready = match self.state.ready_mut() {
-                    Ok(ready) => ready,
-                    Err(err) => {
-                        debug_assert!(false, "submit start observed with non-ready engine state");
-                        return Err(err);
+                {
+                    let ready = match self.state.ready_mut() {
+                        Ok(ready) => ready,
+                        Err(err) => {
+                            debug_assert!(
+                                false,
+                                "submit start observed with non-ready engine state"
+                            );
+                            return Err(err);
+                        }
+                    };
+                    ready.transfer = TransferState::InFlight {
+                        dma_complete_pending: false,
+                        submitted_mask: pending_mask,
+                    };
+                    ready.pending_mask =
+                        ChannelMask::from_bits(ready.pending_mask.bits() & !pending_mask.bits());
+                }
+
+                for channel_index in 0..max_channels {
+                    let is_submitted = (pending_mask.bits() & (1u32 << channel_index)) != 0;
+                    if is_submitted {
+                        self.channels.advance_phase(channel_index, max_channels)?;
                     }
-                };
-                ready.transfer = TransferState::InFlight {
-                    dma_complete_pending: false,
-                    submitted_mask: pending_mask,
-                };
-                ready.pending_mask =
-                    ChannelMask::from_bits(ready.pending_mask.bits() & !pending_mask.bits());
+                }
             }
             StartTransfer::Busy => {}
         }

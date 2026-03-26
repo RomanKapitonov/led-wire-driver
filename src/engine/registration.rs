@@ -1,12 +1,15 @@
 //! Engine-owned channel registration semantics and storage.
 
-use super::{
-    EngineError,
-    types::{ChannelMask, FrameEpoch},
-};
+use heapless::Vec;
+
+use super::{EngineError, mask::ChannelMask};
 use crate::{
     DRIVER_MAX_CHANNELS,
-    model::{BackendChannelId, PixelLayout},
+    api::{
+        backend::BackendChannelSpec,
+        types::{Channel, PreparedSetup},
+    },
+    model::{BackendChannelId, FrameEpoch, PixelLayout},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -84,6 +87,96 @@ impl ChannelState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RegistrationPlan {
+    handles: [Option<Channel>; DRIVER_MAX_CHANNELS],
+    records: [Option<ChannelState>; DRIVER_MAX_CHANNELS],
+    specs: Vec<BackendChannelSpec, { DRIVER_MAX_CHANNELS }>,
+    order: Vec<usize, { DRIVER_MAX_CHANNELS }>,
+}
+
+impl RegistrationPlan {
+    pub(crate) fn from_prepared_setup(
+        setup: &PreparedSetup,
+        driver_id: u32,
+        max_channels: usize,
+        max_bytes_per_channel: Option<u32>,
+    ) -> Result<Self, EngineError> {
+        let mut handles = [None; DRIVER_MAX_CHANNELS];
+        let mut records = [None; DRIVER_MAX_CHANNELS];
+        let mut specs = Vec::<BackendChannelSpec, { DRIVER_MAX_CHANNELS }>::new();
+        let mut order = Vec::<usize, { DRIVER_MAX_CHANNELS }>::new();
+
+        for binding in setup.bindings() {
+            let channel_index = binding.logical_channel.as_index();
+            if channel_index >= max_channels {
+                return Err(EngineError::ChannelOutOfRange);
+            }
+
+            if records[channel_index].is_some() {
+                return Err(EngineError::ChannelAlreadyRegistered);
+            }
+
+            let wire_bytes = u32::from(binding.pixels)
+                .checked_mul(3)
+                .ok_or(EngineError::ConfigurationLimitExceeded)?;
+            if let Some(max_bytes) = max_bytes_per_channel {
+                if wire_bytes > max_bytes {
+                    return Err(EngineError::ConfigurationLimitExceeded);
+                }
+            }
+
+            let record = ChannelState::new(
+                binding.backend_channel,
+                binding.pixels as usize,
+                binding.layout,
+            );
+            let spec = BackendChannelSpec {
+                channel: record.backend_channel(),
+                pixels: u16::try_from(record.len_pixels())
+                    .map_err(|_| EngineError::ChannelOutOfRange)?,
+                layout: record.layout(),
+            };
+
+            debug_assert!(
+                DRIVER_MAX_CHANNELS <= u8::MAX as usize,
+                "Channel handle index storage assumes DRIVER_MAX_CHANNELS fits in u8"
+            );
+            handles[channel_index] = Some(Channel::new(driver_id, channel_index as u8));
+            records[channel_index] = Some(record);
+            specs
+                .push(spec)
+                .map_err(|_| EngineError::ConfigurationLimitExceeded)?;
+            order
+                .push(channel_index)
+                .map_err(|_| EngineError::ConfigurationLimitExceeded)?;
+        }
+
+        Ok(Self {
+            handles,
+            records,
+            specs,
+            order,
+        })
+    }
+
+    pub(crate) fn handles(&self) -> [Option<Channel>; DRIVER_MAX_CHANNELS] {
+        self.handles
+    }
+
+    pub(crate) fn specs(&self) -> &[BackendChannelSpec] {
+        self.specs.as_slice()
+    }
+
+    pub(crate) fn staged_records(&self) -> impl Iterator<Item = (usize, ChannelState)> + '_ {
+        self.order.iter().map(|&channel_index| {
+            let record = self.records[channel_index]
+                .expect("registration plan order must only reference populated records");
+            (channel_index, record)
+        })
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct RegistrationTable {
     pub(super) records: [Option<ChannelState>; DRIVER_MAX_CHANNELS],
@@ -109,6 +202,17 @@ impl RegistrationTable {
             return Err(EngineError::ChannelAlreadyRegistered);
         }
         self.records[channel_index] = Some(channel);
+        Ok(())
+    }
+
+    pub fn commit_plan(
+        &mut self,
+        max_channels: usize,
+        plan: &RegistrationPlan,
+    ) -> Result<(), EngineError> {
+        for (channel_index, channel) in plan.staged_records() {
+            self.register(max_channels, channel_index, channel)?;
+        }
         Ok(())
     }
 
@@ -174,9 +278,7 @@ impl RegistrationTable {
             "channel index exceeds channel mask capacity"
         );
         if channel_index >= ChannelMask::CAPACITY_BITS {
-            return Err(EngineError::Backend(
-                crate::api::backend::BackendError::InvalidBinding,
-            ));
+            return Err(EngineError::ConfigurationLimitExceeded);
         }
         Ok(ChannelMask::from_bits(1u32 << channel_index))
     }

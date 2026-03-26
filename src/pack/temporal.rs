@@ -1,4 +1,4 @@
-use crate::engine::types::FrameEpoch;
+use crate::model::FrameEpoch;
 
 #[cfg_attr(feature = "pack-td-none", allow(dead_code))]
 pub trait TemporalDither {

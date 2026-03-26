@@ -3,24 +3,20 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use crate::{
-    DRIVER_MAX_CHANNELS,
-    api::backend::{BackendEvent, BackendSignal, LedBackend},
-    engine::{LedEngine, registration::ChannelState},
-    host::DriverHostIngress,
-    pack::{ActiveSpatialQuantizer, ActiveTemporalDither},
-};
-
 use super::{
     error_map::{
-        map_driver_init_error, map_finalize_error, map_register_bind_error,
-        map_runtime_commit_error, map_runtime_mark_written_error, map_runtime_service_error,
-        map_runtime_write_pack_error, map_runtime_write_prepare_error,
+        map_driver_init_error, map_register_bind_error, map_runtime_commit_error,
+        map_runtime_mark_published_error, map_runtime_service_error, map_runtime_write_pack_error,
+        map_runtime_write_prepare_error, map_runtime_write_publish_error,
     },
     types::{
-        Channel, ConfiguredChannels, DriverInitError, FinalizeError, PreparedSetup, RegisterError,
-        Rgb48, RuntimeError,
+        Channel, ConfiguredChannels, DriverInitError, PreparedSetup, RegisterError, Rgb48,
+        RuntimeError,
     },
+};
+use crate::{
+    api::backend::{BackendEvent, BackendSignal, LedBackend},
+    engine::LedEngine,
 };
 
 static NEXT_DRIVER_ID: AtomicU32 = AtomicU32::new(1);
@@ -69,39 +65,53 @@ where
         })
     }
 
+    /// Atomically applies one validated setup to the backend and local
+    /// registration table.
+    ///
+    /// Contract:
+    /// - the setup must be non-empty,
+    /// - configuration is single-shot,
+    /// - on success the returned handles always correspond to committed state,
+    /// - on failure no caller-visible handles are produced.
     pub fn configure_prepared(
         &mut self,
         setup: &PreparedSetup,
     ) -> Result<ConfiguredChannels, RegisterError> {
-        let mut handles = [None; DRIVER_MAX_CHANNELS];
-        for (logical_channel, backend_channel, pixels, layout) in setup.iter() {
-            let channel_index = logical_channel.as_index();
-            let handle_index =
-                u8::try_from(channel_index).map_err(|_| RegisterError::InvalidBinding)?;
-            let channel = ChannelState::new(backend_channel, pixels as usize, layout);
-            self.engine
-                .register_channel(channel_index, channel)
-                .map_err(map_register_bind_error)?;
-
-            if channel_index >= handles.len() {
-                return Err(RegisterError::InvalidBinding);
-            }
-            handles[channel_index] = Some(Channel::new(self.driver_id, handle_index));
+        if setup.is_empty() {
+            return Err(RegisterError::EmptyConfiguration);
+        }
+        if self.engine.is_configuration_committed() {
+            return Err(RegisterError::AlreadyConfigured);
         }
 
-        Ok(ConfiguredChannels::from_entries(handles))
+        let plan = self
+            .engine
+            .build_registration_plan(setup, self.driver_id)
+            .map_err(map_register_bind_error)?;
+
+        self.engine
+            .apply_registration_plan(&plan)
+            .map_err(map_register_bind_error)?;
+
+        self.engine.enter_ready_state();
+
+        Ok(ConfiguredChannels::from_entries(plan.handles()))
     }
 
-    pub fn finalize(mut self) -> Result<Driver<B, Ready>, FinalizeError> {
-        self.engine
-            .finalize_configuration()
-            .map_err(map_finalize_error)?;
-
-        Ok(Driver::<B, Ready> {
+    /// Completes the configuring typestate after successful configuration.
+    ///
+    /// `configure_prepared(...)` performs registration commit work. This method
+    /// only transitions the public driver type into `Ready`.
+    pub fn finalize(self) -> Driver<B, Ready> {
+        debug_assert!(
+            self.engine.is_configuration_committed(),
+            "finalize called before a successful configure_prepared() commit"
+        );
+        Driver::<B, Ready> {
             driver_id: self.driver_id,
             engine: self.engine,
             _state: PhantomData,
-        })
+        }
     }
 }
 
@@ -130,6 +140,14 @@ where
     pub fn service(&mut self) -> Result<(), RuntimeError> {
         self.engine.service().map_err(map_runtime_service_error)
     }
+
+    pub fn on_backend_signal(&mut self, signal: BackendSignal) {
+        self.engine.on_backend_signal(signal);
+    }
+
+    pub fn on_backend_event(&mut self, event: BackendEvent) {
+        self.engine.on_backend_event(event);
+    }
 }
 
 impl<'a, B> ChannelWriter<'a, B>
@@ -137,35 +155,23 @@ where
     B: LedBackend,
 {
     pub fn write_rgb48(&mut self, pixels: &[Rgb48]) -> Result<(), RuntimeError> {
-        let plan = self
-            .driver
-            .engine
-            .prepare_channel_write(self.channel_index)
-            .map_err(map_runtime_write_prepare_error)?;
+        {
+            let mut write = self
+                .driver
+                .engine
+                .acquire_prepared_write(self.channel_index)
+                .map_err(map_runtime_write_prepare_error)?;
 
-        LedEngine::<B>::write_slice_to_plan::<Rgb48, ActiveTemporalDither, ActiveSpatialQuantizer>(
-            pixels,
-            plan.frame_phase,
-            plan,
-        )
-        .map_err(map_runtime_write_pack_error)?;
+            write
+                .pack_rgb48_active(pixels)
+                .map_err(map_runtime_write_pack_error)?;
+
+            write.publish().map_err(map_runtime_write_publish_error)?;
+        }
 
         self.driver
             .engine
-            .mark_channel_written(self.channel_index)
-            .map_err(map_runtime_mark_written_error)
-    }
-}
-
-impl<B> DriverHostIngress for Driver<B, Ready>
-where
-    B: LedBackend,
-{
-    fn on_backend_signal(&mut self, signal: BackendSignal) {
-        self.engine.on_backend_signal(signal);
-    }
-
-    fn on_backend_event(&mut self, event: BackendEvent) {
-        self.engine.on_backend_event(event);
+            .mark_channel_published(self.channel_index)
+            .map_err(map_runtime_mark_published_error)
     }
 }

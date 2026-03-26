@@ -5,14 +5,11 @@
 //! - busy start keeps pending channels intact for retry
 //! - completion meaning is backend-owned; engine only reacts to
 //!   `BackendEvent::TransferComplete`
+//! - backend contract mismatches are reported distinctly from transport faults
 
-use super::{
-    EngineError, LedEngine,
-    types::{ChannelMask, WireSpan, WireTarget, WritePlan},
-};
-use crate::DRIVER_MAX_CHANNELS;
+use super::{EngineError, LedEngine, mask::ChannelMask, prepared_write::PreparedWrite};
 use crate::api::backend::{
-    AcquireWrite, BackendError, BackendEvent, BackendSignal, LedBackend, StartTransfer,
+    AcquireWrite, BackendEvent, BackendSignal, BackendWriteLease, LedBackend, StartTransfer,
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -36,7 +33,6 @@ pub(super) enum TransferState {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct ReadyState {
     pub transfer: TransferState,
-    pub prepared_tokens: [Option<u16>; DRIVER_MAX_CHANNELS],
     pub dirty_mask: ChannelMask,
     pub pending_mask: ChannelMask,
 }
@@ -45,7 +41,6 @@ impl ReadyState {
     pub const fn new() -> Self {
         Self {
             transfer: TransferState::Idle,
-            prepared_tokens: [None; DRIVER_MAX_CHANNELS],
             dirty_mask: ChannelMask::ZERO,
             pending_mask: ChannelMask::ZERO,
         }
@@ -75,14 +70,18 @@ impl EngineState {
     pub fn ready(&self) -> Result<&ReadyState, EngineError> {
         match &self.lifecycle {
             EngineLifecycle::Ready(state) => Ok(state),
-            _ => Err(EngineError::Backend(BackendError::InvalidBinding)),
+            _ => Err(EngineError::InvalidState(
+                super::EngineStateExpectation::MustBeReady,
+            )),
         }
     }
 
     pub fn ready_mut(&mut self) -> Result<&mut ReadyState, EngineError> {
         match &mut self.lifecycle {
             EngineLifecycle::Ready(state) => Ok(state),
-            _ => Err(EngineError::Backend(BackendError::InvalidBinding)),
+            _ => Err(EngineError::InvalidState(
+                super::EngineStateExpectation::MustBeReady,
+            )),
         }
     }
 }
@@ -91,69 +90,47 @@ impl<B> LedEngine<B>
 where
     B: LedBackend,
 {
-    pub fn prepare_channel_write(
+    pub fn acquire_prepared_write(
         &mut self,
         channel_index: usize,
-    ) -> Result<WritePlan, EngineError> {
+    ) -> Result<PreparedWrite<'_, B>, EngineError> {
         let channel = self.channels.record(channel_index, self.max_channels())?;
-        let grant = self
+        let lease = self
             .backend
-            .acquire_write_target(channel.backend_channel().as_u8())
+            .acquire_write_target(channel.backend_channel())
             .map_err(EngineError::Backend)?;
 
-        let grant = match grant {
-            AcquireWrite::Ready(grant) => grant,
+        let mut lease = match lease {
+            AcquireWrite::Ready(lease) => lease,
             AcquireWrite::Busy => return Err(EngineError::WriteBusy),
         };
 
-        if grant.channel != channel.backend_channel().as_u8() {
-            return Err(EngineError::Backend(BackendError::InvalidBinding));
+        if lease.channel() != channel.backend_channel() {
+            return Err(EngineError::BackendContractViolation(
+                super::BackendContractViolation::WrongChannelReturned,
+            ));
         }
         let expected_wire_bytes = (channel.len_pixels() as u32)
             .checked_mul(3)
-            .ok_or(EngineError::Backend(BackendError::InvalidBinding))?;
-        if grant.len != expected_wire_bytes {
-            return Err(EngineError::Backend(BackendError::InvalidBinding));
+            .ok_or(EngineError::ConfigurationLimitExceeded)?;
+        if lease.bytes_mut().len() != expected_wire_bytes as usize {
+            return Err(EngineError::BackendContractViolation(
+                super::BackendContractViolation::WrongTargetLength,
+            ));
         }
 
-        let span = WireSpan {
-            addr: grant.ptr as usize,
-            size_bytes: grant.len,
-        };
-        let target = WireTarget::from_span(span)?;
-
-        let ready = self.state.ready_mut()?;
-        if channel_index >= ready.prepared_tokens.len() {
-            return Err(EngineError::ChannelOutOfRange);
-        }
-        ready.prepared_tokens[channel_index] = Some(grant.token);
-
-        Ok(WritePlan {
+        Ok(PreparedWrite {
             layout: channel.layout(),
             frame_phase: channel.frame_phase(),
-            target,
+            lease,
         })
     }
 
-    pub fn mark_channel_written(&mut self, channel_index: usize) -> Result<(), EngineError> {
+    pub fn mark_channel_published(&mut self, channel_index: usize) -> Result<(), EngineError> {
         self.channels.record(channel_index, self.max_channels())?;
-
-        let token = {
-            let ready = self.state.ready()?;
-            if channel_index >= ready.prepared_tokens.len() {
-                return Err(EngineError::ChannelOutOfRange);
-            }
-            ready.prepared_tokens[channel_index]
-                .ok_or(EngineError::Backend(BackendError::InvalidBinding))?
-        };
-
-        self.backend
-            .publish_write(token)
-            .map_err(EngineError::Backend)?;
 
         let max_channels = self.max_channels();
         let ready = self.state.ready_mut()?;
-        ready.prepared_tokens[channel_index] = None;
         ready.dirty_mask =
             self.channels
                 .mark_written(channel_index, max_channels, ready.dirty_mask)?;

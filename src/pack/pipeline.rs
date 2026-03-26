@@ -2,7 +2,7 @@ use super::{
     convert::WireColor, error::PackError, layout::layout_map, spatial::SpatialQuantizer,
     temporal::TemporalDither,
 };
-use crate::{engine::types::FrameEpoch, model::PixelLayout};
+use crate::model::{FrameEpoch, PixelLayout};
 
 #[cfg(feature = "pack-sq-none")]
 #[inline(always)]

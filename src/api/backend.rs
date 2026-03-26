@@ -4,19 +4,20 @@
 //! contract surface.
 //!
 //! Backend contract model:
-//! - `register_channel` + `finalize_channels` define channel registration.
+//! - `configure_channels(&[BackendChannelSpec])` defines atomic channel
+//!   registration.
 //! - `acquire_write_target(channel)` grants temporary mutable access to one
 //!   backend-owned wire buffer for that channel.
-//! - `publish_write(token)` publishes that write grant into backend-pending
+//! - `publish()` on the acquired lease publishes that write into backend-pending
 //!   state for later transport submission.
 //! - `submit_channels(mask)` asks backend transport to submit committed channels.
 //!
 //! Write target ownership:
-//! - memory for write targets is backend-owned and must outlive grants.
-//! - when `AcquireWrite::Ready(grant)` is returned, grant `(ptr,len)` must be
-//!   writable for the duration of that write call path.
-//! - `token` identity is backend-defined and must be accepted exactly once by
-//!   `publish_write`.
+//! - memory for write targets is backend-owned.
+//! - when `AcquireWrite::Ready(lease)` is returned, `lease.bytes_mut()` exposes
+//!   the exact writable target for that acquired write.
+//! - dropping an unpublished lease must abort it so the channel becomes
+//!   retryable.
 //!
 //! Busy/submit semantics:
 //! - `AcquireWrite::Busy`: channel currently has no writable target available.
@@ -30,7 +31,7 @@
 //! - `on_event` is for logical backend events after host/runtime translation.
 //! - event meaning stays backend-owned; driver reacts only to declared events.
 
-use crate::model::PixelLayout;
+use crate::model::{BackendChannelId, PixelLayout};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BackendError {
@@ -53,22 +54,28 @@ pub enum BackendEvent {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BackendChannelSpec {
-    pub channel: u8,
+    pub channel: BackendChannelId,
     pub pixels: u16,
     pub layout: PixelLayout,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct BackendWriteGrant {
-    pub channel: u8,
-    pub token: u16,
-    pub ptr: *mut u8,
-    pub len: u32,
+/// Safe lease contract selected for the long-term backend write boundary.
+///
+/// Contract:
+/// - `bytes_mut()` exposes the exact writable target for this acquired write.
+/// - the returned borrow must not outlive the lease object.
+/// - `publish()` transfers the acquired write into backend-pending state.
+/// - if the lease is dropped without successful publish, backend-local cleanup
+///   must abort the write so the channel becomes retryable.
+pub trait BackendWriteLease {
+    fn channel(&self) -> BackendChannelId;
+    fn bytes_mut(&mut self) -> &mut [u8];
+    fn publish(&mut self) -> Result<(), BackendError>;
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum AcquireWrite {
-    Ready(BackendWriteGrant),
+pub enum AcquireWrite<G> {
+    Ready(G),
     Busy,
 }
 
@@ -86,34 +93,36 @@ pub struct BackendCapabilities {
 }
 
 pub trait LedBackend {
+    type WriteLease<'a>: BackendWriteLease + 'a
+    where
+        Self: 'a;
+
     fn init(&mut self) -> Result<(), BackendError>;
     fn capabilities(&self) -> BackendCapabilities;
 
-    /// Registers one logical channel with semantic metadata.
+    /// Applies the full logical-channel configuration for this backend.
     ///
-    /// This is the preferred transport-agnostic registration path.
-    fn register_channel(&mut self, spec: BackendChannelSpec) -> Result<(), BackendError> {
-        let _ = spec;
-        Ok(())
-    }
-
-    /// Finalizes channel registration for backends using `register_channel`.
-    fn finalize_channels(&mut self) -> Result<(), BackendError> {
+    /// The call must behave as one configuration unit from the driver's
+    /// perspective:
+    /// - on success the backend is fully configured for the given set,
+    /// - on failure the backend must not require driver recreation just to
+    ///   clear partial registration state,
+    /// - retry after failure must remain possible unless the backend reports a
+    ///   hard fatal condition.
+    fn configure_channels(&mut self, specs: &[BackendChannelSpec]) -> Result<(), BackendError> {
+        let _ = specs;
         Ok(())
     }
 
     /// Acquires a writable backend-owned target for the given channel.
     ///
     /// This is the preferred transport-agnostic write path.
-    fn acquire_write_target(&mut self, channel: u8) -> Result<AcquireWrite, BackendError> {
+    fn acquire_write_target(
+        &mut self,
+        channel: BackendChannelId,
+    ) -> Result<AcquireWrite<Self::WriteLease<'_>>, BackendError> {
         let _ = channel;
         Ok(AcquireWrite::Busy)
-    }
-
-    /// Publishes a previously acquired write grant token.
-    fn publish_write(&mut self, token: u16) -> Result<(), BackendError> {
-        let _ = token;
-        Ok(())
     }
 
     /// Submits a committed logical channel mask.

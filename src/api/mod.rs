@@ -3,30 +3,41 @@
 //! It does not expose any firmware-owned host/runtime integration path.
 //!
 //! The intended usage story is:
-//! - setup through [`Driver::new`] and [`Driver::configure_prepared`]
+//! - setup through validated [`PreparedSetup`] values and
+//!   one single-shot call to [`Driver::configure_prepared`]
 //! - runtime channel writes through `driver.channel(channel).write_rgb48(...)`
 //! - submission through [`Driver::commit`]
-//! - host/backend ingress through [`crate::host::DriverHostIngress`]
+//! - backend ingress through [`Driver::on_backend_signal`] and
+//!   [`Driver::on_backend_event`]
 //! - backend implementation contracts through [`backend`]
 //!
 //! Buffer provisioning is backend-owned and is intentionally outside this API.
+//! Backend-specific acceptance checks still happen later during registration.
 //!
 //! API invariants:
 //! - `configure_prepared` is valid only before [`Driver::finalize`]
+//! - `configure_prepared` is single-shot and atomically commits configuration
 //! - `channel(...)/commit/service` are valid only after [`Driver::finalize`]
-//! - channel tokens are driver-owned; cross-driver token usage is rejected
+//! - channel handles are driver-owned; cross-driver handle usage is rejected
 //! - lifecycle order is enforced by typestate (`Configuring` -> `Ready`)
 //!
 //! Minimal usage shape:
 //! ```rust,ignore
 //! use crate::api::{
-//!     Driver, PreparedSetup, Rgb48,
+//!     Driver, PreparedBinding, PreparedSetup, Rgb48,
 //! };
 //!
-//! let setup: PreparedSetup = /* produced by preparation/bootstrap boundary */;
+//! let setup = PreparedSetup::from_bindings([
+//!     PreparedBinding::new(
+//!         crate::api::ChannelId::new(0),
+//!         crate::api::BackendChannelId::new(0),
+//!         60,
+//!         crate::api::PixelLayout::Grb,
+//!     ),
+//! ])?;
 //! let mut configuring = Driver::new(MyBackend::new())?;
 //! let handles = configuring.configure_prepared(&setup)?;
-//! let mut driver = configuring.finalize()?;
+//! let mut driver = configuring.finalize();
 //!
 //! let channel = handles
 //!     .get(crate::api::ChannelId::new(0))
@@ -36,20 +47,34 @@
 //!     .write_rgb48(&[Rgb48 { r: 65535, g: 0, b: 0 }])?;
 //! driver.commit()?;
 //! driver.service()?;
-//! # Ok::<(), ()>(())
+//! # Ok::<(), crate::api::SetupBuildError>(())
 //! ```
 //!
 //! Typestate misuse (intended compile-time failures):
 //! - calling `commit` on `Driver<_, Configuring>`
 //! - calling `configure_prepared` on `Driver<_, Ready>`
+//!
+//! Runtime misuse rejected explicitly:
+//! - calling `configure_prepared` with an empty setup
+//! - calling `configure_prepared` more than once
+//!
+//! Runtime error categories:
+//! - [`RuntimeError::InvalidChannel`] means the handle does not belong to this
+//!   driver instance or no longer resolves to a registered channel
+//! - [`RuntimeError::LengthMismatch`] means the source pixel slice length does
+//!   not match the configured channel length
+//! - [`RuntimeError::BackendContract`] means the backend violated the driver's
+//!   expected runtime contract
+//! - [`RuntimeError::Backend`] means an actual backend-owned failure such as a
+//!   transport fault
 pub mod backend;
 
 mod driver;
 mod error_map;
-mod types;
+pub(crate) mod types;
 
 pub use driver::{Configuring, Driver, Ready};
 pub use types::{
-    BackendChannelId, ChannelId, ConfiguredChannels, DriverInitError, FinalizeError, PixelLayout,
-    PreparedSetup, RegisterError, Rgb48, RuntimeError,
+    BackendChannelId, ChannelId, ConfiguredChannels, DriverInitError, PixelLayout, PreparedBinding,
+    PreparedSetup, RegisterError, Rgb48, RuntimeError, SetupBuildError,
 };

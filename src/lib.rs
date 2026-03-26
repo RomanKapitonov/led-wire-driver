@@ -5,10 +5,11 @@
 //!
 //! Public surfaces:
 //! - [`api`]: independent driver boundary.
-//! - [`host`]: integration-facing backend signal/event ingress boundary.
-//! - setup phase: [`api::Driver::new`] -> `configure_prepared` -> `finalize`.
+//! - setup phase: validated [`api::PreparedSetup`] construction ->
+//!   [`api::Driver::new`] -> one atomic `configure_prepared` -> `finalize`.
 //! - runtime phase: channel writes via `driver.channel(channel)?.write_rgb48(...)`,
-//!   then `commit`, then periodic `service`.
+//!   then `commit`, periodic `service`, and direct backend ingress through
+//!   [`api::Driver::on_backend_event`] / [`api::Driver::on_backend_signal`].
 //!
 //! Internal layers:
 //! - [`engine`]: authoritative driver state machine.
@@ -26,4 +27,3 @@ pub(crate) mod model;
 pub(crate) mod pack;
 
 pub mod api;
-pub mod host;

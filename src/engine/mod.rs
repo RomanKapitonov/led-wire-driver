@@ -11,6 +11,8 @@
 //! - structural channel/pixel/layout validity happens in the bootstrap
 //!   preparation boundary
 //! - lifecycle call-order validity is enforced in `driver::api` typestate
+//!   first, with explicit `EngineError::InvalidState(...)` retained as an
+//!   internal backstop for misused engine entry points
 //! - backend resource/wire target validity is enforced by backend
 //!
 //! Engine invariants:
@@ -20,20 +22,25 @@
 //! - channel phase advances only for committed dirty channels
 
 mod error;
+mod mask;
+mod prepared_write;
 pub(crate) mod registration;
 mod runtime;
-pub(crate) mod types;
-mod write;
 
-pub use error::EngineError;
+pub use error::{BackendContractViolation, EngineError, EngineStateExpectation};
 
 use self::{
-    registration::{ChannelState, RegistrationTable},
+    mask::ChannelMask,
+    registration::{RegistrationPlan, RegistrationTable},
     runtime::{EngineLifecycle, EngineState, ReadyState},
-    types::ChannelMask,
 };
-use crate::DRIVER_MAX_CHANNELS;
-use crate::api::backend::{BackendChannelSpec, BackendError, LedBackend};
+use crate::{
+    DRIVER_MAX_CHANNELS,
+    api::{
+        backend::LedBackend,
+        types::PreparedSetup,
+    },
+};
 
 pub struct LedEngine<B>
 where
@@ -41,6 +48,7 @@ where
 {
     backend: B,
     max_channels: usize,
+    max_bytes_per_channel: Option<u32>,
     state: EngineState,
     channels: RegistrationTable,
 }
@@ -59,10 +67,12 @@ where
             "LedEngine supports at most {} channels because ChannelMask is u32",
             ChannelMask::CAPACITY_BITS
         );
-        let max_channels = backend.capabilities().max_channels.min(DRIVER_MAX_CHANNELS);
+        let capabilities = backend.capabilities();
+        let max_channels = capabilities.max_channels.min(DRIVER_MAX_CHANNELS);
         Self {
             backend,
             max_channels,
+            max_bytes_per_channel: capabilities.max_bytes_per_channel,
             state: EngineState::new(),
             channels: RegistrationTable::new(),
         }
@@ -80,40 +90,61 @@ where
         self.max_channels
     }
 
-    pub fn register_channel(
+    pub(crate) fn is_configuration_committed(&self) -> bool {
+        self.state.is_ready()
+    }
+
+    pub(crate) fn build_registration_plan(
+        &self,
+        setup: &PreparedSetup,
+        driver_id: u32,
+    ) -> Result<RegistrationPlan, EngineError> {
+        if !self.state.is_registering() {
+            debug_assert!(
+                false,
+                "build_registration_plan called outside registration phase; typestate should prevent this"
+            );
+            return Err(EngineError::InvalidState(
+                EngineStateExpectation::MustBeRegistering,
+            ));
+        }
+
+        RegistrationPlan::from_prepared_setup(
+            setup,
+            driver_id,
+            self.max_channels(),
+            self.max_bytes_per_channel,
+        )
+    }
+
+    pub(crate) fn apply_registration_plan(
         &mut self,
-        channel_index: usize,
-        channel: ChannelState,
+        plan: &RegistrationPlan,
     ) -> Result<(), EngineError> {
         if !self.state.is_registering() {
             debug_assert!(
                 false,
-                "register_channel called outside registration phase; typestate should prevent this"
+                "apply_registration_plan called outside registration phase; typestate should prevent this"
             );
-            return Err(EngineError::Backend(BackendError::InvalidBinding));
+            return Err(EngineError::InvalidState(
+                EngineStateExpectation::MustBeRegistering,
+            ));
         }
-        let spec = BackendChannelSpec {
-            channel: channel.backend_channel().as_u8(),
-            pixels: u16::try_from(channel.len_pixels())
-                .map_err(|_| EngineError::ChannelOutOfRange)?,
-            layout: channel.layout(),
-        };
+
         self.backend
-            .register_channel(spec)
+            .configure_channels(plan.specs())
             .map_err(EngineError::Backend)?;
-        self.channels
-            .register(self.max_channels(), channel_index, channel)
+
+        self.channels.commit_plan(self.max_channels(), plan)?;
+
+        Ok(())
     }
 
-    pub fn finalize_configuration(&mut self) -> Result<(), EngineError> {
+    pub(crate) fn enter_ready_state(&mut self) {
         if self.state.is_ready() {
-            return Ok(());
+            return;
         }
 
-        self.backend
-            .finalize_channels()
-            .map_err(EngineError::Backend)?;
         self.state.lifecycle = EngineLifecycle::Ready(ReadyState::new());
-        Ok(())
     }
 }

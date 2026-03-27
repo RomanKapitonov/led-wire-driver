@@ -1,4 +1,14 @@
 //! Engine-owned channel registration semantics and storage.
+//!
+//! Registration uses a staged-then-commit model:
+//! - [`RegistrationPlan`] validates one prepared setup into backend specs,
+//!   channel handles, and staged records without mutating engine state
+//! - backend configuration is applied against that staged plan as one batch
+//! - only after backend success does [`RegistrationTable`] commit the staged
+//!   channel records locally
+//!
+//! This keeps configuration atomic from the driver's point of view while still
+//! allowing registration planning to remain a separate internal concern.
 
 use heapless::Vec;
 
@@ -7,9 +17,10 @@ use crate::{
     DRIVER_MAX_CHANNELS,
     api::{
         backend::BackendChannelSpec,
-        types::{Channel, PreparedSetup},
+        channel::{Channel, DriverId},
+        setup::PreparedSetup,
     },
-    model::{BackendChannelId, FrameEpoch, PixelLayout},
+    model::{BackendChannelId, ChannelId, FrameEpoch, PixelLayout},
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -94,9 +105,15 @@ pub(crate) struct RegistrationPlan {
 }
 
 impl RegistrationPlan {
+    /// Builds one staged registration unit from a validated prepared setup.
+    ///
+    /// This stage performs structural limit checks and produces:
+    /// - runtime channel handles for the owning driver instance
+    /// - staged channel records for local commit
+    /// - backend channel specs for batch backend configuration
     pub(crate) fn from_prepared_setup(
         setup: &PreparedSetup,
-        driver_id: u32,
+        driver_id: DriverId,
         max_channels: usize,
         max_bytes_per_channel: Option<u32>,
     ) -> Result<Self, EngineError> {
@@ -118,10 +135,10 @@ impl RegistrationPlan {
             let wire_bytes = u32::from(binding.pixels)
                 .checked_mul(3)
                 .ok_or(EngineError::ConfigurationLimitExceeded)?;
-            if let Some(max_bytes) = max_bytes_per_channel {
-                if wire_bytes > max_bytes {
-                    return Err(EngineError::ConfigurationLimitExceeded);
-                }
+            if let Some(max_bytes) = max_bytes_per_channel
+                && wire_bytes > max_bytes
+            {
+                return Err(EngineError::ConfigurationLimitExceeded);
             }
 
             let record = ChannelState::new(
@@ -140,7 +157,9 @@ impl RegistrationPlan {
                 DRIVER_MAX_CHANNELS <= u8::MAX as usize,
                 "Channel handle index storage assumes DRIVER_MAX_CHANNELS fits in u8"
             );
-            handles[channel_index] = Some(Channel::new(driver_id, channel_index as u8));
+            let logical_channel = ChannelId::from_index(channel_index)
+                .expect("registration plan channel index must fit in ChannelId");
+            handles[channel_index] = Some(Channel::new(driver_id, logical_channel));
             records[channel_index] = Some(record);
             specs
                 .push(spec)
@@ -208,6 +227,9 @@ impl RegistrationTable {
         max_channels: usize,
         plan: &RegistrationPlan,
     ) -> Result<(), EngineError> {
+        // Local registration state is committed only after backend batch
+        // configuration succeeds. This method applies the staged records from
+        // that already-accepted plan.
         for (channel_index, channel) in plan.staged_records() {
             self.register(max_channels, channel_index, channel)?;
         }

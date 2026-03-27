@@ -6,7 +6,18 @@
 //! - channel phase advances only for accepted submission batches
 //! - completion meaning is backend-owned; engine only reacts to
 //!   `BackendEvent::TransferComplete`
+//! - invalid ingress timing is tracked explicitly instead of being
+//!   debug-only release behavior
 //! - backend contract mismatches are reported distinctly from transport faults
+//!
+//! State machine shape:
+//! - published writes first mark channels dirty
+//! - `submit_dirty()` promotes `dirty_mask -> pending_mask` without touching
+//!   transfer ownership or frame phase
+//! - `service()` is responsible for trying transport submission from idle
+//! - frame phase advances only when backend transport accepts the exact pending
+//!   batch via `StartTransfer::Started`
+//! - completion later returns that accepted batch from `InFlight` to `Idle`
 
 use super::{EngineError, LedEngine, mask::ChannelMask, prepared_write::PreparedWrite};
 use crate::api::backend::{
@@ -33,10 +44,20 @@ pub(super) enum TransferState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(super) enum IngressViolation {
+    TransferCompleteWhileIdle,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct ReadyState {
+    /// Transfer ownership currently held by backend transport, if any.
     pub transfer: TransferState,
+    /// Channels published since the last commit promotion.
     pub dirty_mask: ChannelMask,
+    /// Channels ready to retry until transport accepts them.
     pub pending_mask: ChannelMask,
+    /// Latched ingress contract violation to surface on the next runtime call.
+    pub ingress_violation: Option<IngressViolation>,
 }
 
 impl ReadyState {
@@ -45,7 +66,16 @@ impl ReadyState {
             transfer: TransferState::Idle,
             dirty_mask: ChannelMask::ZERO,
             pending_mask: ChannelMask::ZERO,
+            ingress_violation: None,
         }
+    }
+
+    fn take_ingress_violation(&mut self) -> Option<super::BackendContractViolation> {
+        self.ingress_violation
+            .take()
+            .map(|IngressViolation::TransferCompleteWhileIdle| {
+                super::BackendContractViolation::TransferCompleteWhileIdle
+            })
     }
 }
 
@@ -92,10 +122,29 @@ impl<B> LedEngine<B>
 where
     B: LedBackend,
 {
+    /// Surfaces one latched ingress violation on a normal runtime boundary.
+    ///
+    /// Ingress hooks stay infallible so firmware/IRQ glue can forward backend
+    /// signals/events directly. Contract violations are therefore retained in
+    /// ready-state and surfaced once on the next runtime operation.
+    fn surface_latched_ingress_violation(&mut self) -> Result<(), EngineError> {
+        let ready = match self.state.ready_mut() {
+            Ok(ready) => ready,
+            Err(_) => return Ok(()),
+        };
+
+        if let Some(violation) = ready.take_ingress_violation() {
+            return Err(EngineError::BackendContractViolation(violation));
+        }
+
+        Ok(())
+    }
+
     pub fn acquire_prepared_write(
         &mut self,
         channel_index: usize,
     ) -> Result<PreparedWrite<'_, B>, EngineError> {
+        self.surface_latched_ingress_violation()?;
         let channel = self.channels.record(channel_index, self.max_channels())?;
         let lease = self
             .backend
@@ -129,6 +178,7 @@ where
     }
 
     pub fn mark_channel_published(&mut self, channel_index: usize) -> Result<(), EngineError> {
+        self.surface_latched_ingress_violation()?;
         self.channels.record(channel_index, self.max_channels())?;
 
         let max_channels = self.max_channels();
@@ -140,6 +190,7 @@ where
     }
 
     pub fn submit_dirty(&mut self) -> Result<(), EngineError> {
+        self.surface_latched_ingress_violation()?;
         let dirty = self.state.ready()?.dirty_mask;
         if dirty.is_empty() {
             return Ok(());
@@ -157,6 +208,12 @@ where
         self.backend.on_signal(signal);
     }
 
+    /// Records backend event ingress against the current ready-state snapshot.
+    ///
+    /// `TransferComplete` is strict:
+    /// - while `InFlight`, it marks completion pending for later `service()`
+    /// - while idle, it latches a backend-contract violation for one-shot
+    ///   surfacing on the next runtime call
     pub fn on_backend_event(&mut self, event: BackendEvent) {
         self.backend.on_event(event);
         if let Ok(ready) = self.state.ready_mut() {
@@ -169,10 +226,7 @@ where
                     {
                         *dma_complete_pending = true;
                     } else {
-                        debug_assert!(
-                            false,
-                            "received transfer-complete event while no transfer is in flight"
-                        );
+                        ready.ingress_violation = Some(IngressViolation::TransferCompleteWhileIdle);
                     }
                 }
             }
@@ -180,6 +234,7 @@ where
     }
 
     pub fn service(&mut self) -> Result<(), EngineError> {
+        self.surface_latched_ingress_violation()?;
         {
             let ready = match self.state.ready_mut() {
                 Ok(ready) => ready,
@@ -199,7 +254,7 @@ where
                 Ok(ready) => ready,
                 Err(err) => {
                     debug_assert!(
-                        false,
+                        self.state.is_ready(),
                         "service transfer check reached with non-ready engine state"
                     );
                     return Err(err);
@@ -213,13 +268,20 @@ where
         self.try_start_pending_submit()
     }
 
+    /// Starts pending submission only from idle and only for the exact
+    /// currently pending batch.
+    ///
+    /// Accepted-submit semantics live here:
+    /// - `Busy` leaves the pending batch intact
+    /// - `Started` advances phase for the submitted batch, then transfers that
+    ///   exact batch into `InFlight`
     fn try_start_pending_submit(&mut self) -> Result<(), EngineError> {
         let max_channels = self.max_channels();
         let ready = match self.state.ready() {
             Ok(ready) => ready,
             Err(err) => {
                 debug_assert!(
-                    false,
+                    self.state.is_ready(),
                     "try_start_pending_submit reached with non-ready engine state"
                 );
                 return Err(err);
@@ -248,7 +310,7 @@ where
                         Ok(ready) => ready,
                         Err(err) => {
                             debug_assert!(
-                                false,
+                                self.state.is_ready(),
                                 "submit start observed with non-ready engine state"
                             );
                             return Err(err);

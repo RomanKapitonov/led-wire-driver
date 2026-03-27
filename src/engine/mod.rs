@@ -3,7 +3,7 @@
 //! Internal engine layout:
 //! - [`registration`]: registered-channel model and semantic channel metadata
 //! - [`runtime`]: write/submit progression and transfer progression
-//! - [`write`]: pack/write into resolved wire targets
+//! - [`prepared_write`]: pack/write into resolved wire targets
 //! - [`error`]: internal operational error vocabulary
 //!
 //! The engine is intentionally the only owner of driver runtime state.
@@ -28,6 +28,8 @@ mod mask;
 mod prepared_write;
 pub(crate) mod registration;
 mod runtime;
+#[cfg(test)]
+mod tests;
 
 pub use error::{BackendContractViolation, EngineError, EngineStateExpectation};
 
@@ -38,7 +40,15 @@ use self::{
 };
 use crate::{
     DRIVER_MAX_CHANNELS,
-    api::{backend::LedBackend, types::PreparedSetup},
+    api::{
+        backend::LedBackend,
+        channel::{ConfiguredChannels, DriverId},
+        setup::PreparedSetup,
+    },
+};
+
+const _: () = {
+    assert!(DRIVER_MAX_CHANNELS <= ChannelMask::CAPACITY_BITS);
 };
 
 pub struct LedEngine<B>
@@ -61,11 +71,6 @@ where
     /// The current internal channel mask uses a `u32`, so the engine supports
     /// at most 32 channels until that representation changes.
     pub fn new(backend: B) -> Self {
-        assert!(
-            DRIVER_MAX_CHANNELS <= ChannelMask::CAPACITY_BITS,
-            "LedEngine supports at most {} channels because ChannelMask is u32",
-            ChannelMask::CAPACITY_BITS
-        );
         let capabilities = backend.capabilities();
         let max_channels = capabilities.max_channels.min(DRIVER_MAX_CHANNELS);
         Self {
@@ -93,14 +98,25 @@ where
         self.state.is_ready()
     }
 
+    pub(crate) fn configure_prepared(
+        &mut self,
+        setup: &PreparedSetup,
+        driver_id: DriverId,
+    ) -> Result<ConfiguredChannels, EngineError> {
+        let plan = self.build_registration_plan(setup, driver_id)?;
+        self.apply_registration_plan(&plan)?;
+        self.enter_ready_state();
+        Ok(ConfiguredChannels::from_entries(plan.handles()))
+    }
+
     pub(crate) fn build_registration_plan(
         &self,
         setup: &PreparedSetup,
-        driver_id: u32,
+        driver_id: DriverId,
     ) -> Result<RegistrationPlan, EngineError> {
         if !self.state.is_registering() {
             debug_assert!(
-                false,
+                self.state.is_registering(),
                 "build_registration_plan called outside registration phase; typestate should prevent this"
             );
             return Err(EngineError::InvalidState(
@@ -122,7 +138,7 @@ where
     ) -> Result<(), EngineError> {
         if !self.state.is_registering() {
             debug_assert!(
-                false,
+                self.state.is_registering(),
                 "apply_registration_plan called outside registration phase; typestate should prevent this"
             );
             return Err(EngineError::InvalidState(

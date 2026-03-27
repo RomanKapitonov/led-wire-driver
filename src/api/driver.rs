@@ -4,30 +4,47 @@ use core::{
 };
 
 use super::{
+    Rgb48,
+    channel::{Channel, ConfiguredChannels, DriverId},
     error_map::{
         map_driver_init_error, map_register_bind_error, map_runtime_commit_error,
         map_runtime_mark_published_error, map_runtime_service_error, map_runtime_write_pack_error,
         map_runtime_write_prepare_error, map_runtime_write_publish_error,
     },
-    types::{
-        Channel, ConfiguredChannels, DriverInitError, PreparedSetup, RegisterError, Rgb48,
-        RuntimeError,
-    },
+    errors::{DriverInitError, RegisterError, RuntimeError},
+    setup::PreparedSetup,
 };
 use crate::{
     api::backend::{BackendEvent, BackendSignal, LedBackend},
     engine::LedEngine,
 };
 
+// Driver construction is intended to remain safe under concurrent callers.
+// `DriverId(0)` is reserved, so allocation starts at 1 and should continue to
+// skip zero even after wrap-around.
 static NEXT_DRIVER_ID: AtomicU32 = AtomicU32::new(1);
 
-fn allocate_driver_id() -> u32 {
-    let id = NEXT_DRIVER_ID.fetch_add(1, Ordering::Relaxed);
-    if id == 0 {
-        NEXT_DRIVER_ID.store(1, Ordering::Relaxed);
-        1
-    } else {
-        id
+/// Allocates one non-zero driver owner token.
+///
+/// Contract:
+/// - concurrent callers must still receive distinct `DriverId` values,
+/// - `DriverId(0)` is reserved and must never be handed out,
+/// - the allocator only provides uniqueness, so `Relaxed` ordering is
+///   sufficient.
+fn allocate_driver_id() -> DriverId {
+    let mut current = NEXT_DRIVER_ID.load(Ordering::Relaxed);
+    loop {
+        let raw = if current == 0 { 1 } else { current };
+        let next = raw.checked_add(1).unwrap_or(1);
+        match NEXT_DRIVER_ID.compare_exchange_weak(
+            current,
+            next,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return DriverId::new(raw),
+            Err(observed) => current = observed,
+        }
     }
 }
 
@@ -38,7 +55,7 @@ pub struct Driver<B, S = Configuring>
 where
     B: LedBackend,
 {
-    pub(super) driver_id: u32,
+    pub(super) driver_id: DriverId,
     pub(super) engine: LedEngine<B>,
     pub(super) _state: PhantomData<S>,
 }
@@ -84,18 +101,9 @@ where
             return Err(RegisterError::AlreadyConfigured);
         }
 
-        let plan = self
-            .engine
-            .build_registration_plan(setup, self.driver_id)
-            .map_err(map_register_bind_error)?;
-
         self.engine
-            .apply_registration_plan(&plan)
-            .map_err(map_register_bind_error)?;
-
-        self.engine.enter_ready_state();
-
-        Ok(ConfiguredChannels::from_entries(plan.handles()))
+            .configure_prepared(setup, self.driver_id)
+            .map_err(map_register_bind_error)
     }
 
     /// Completes the configuring typestate after successful configuration.
@@ -119,6 +127,11 @@ impl<B> Driver<B, Ready>
 where
     B: LedBackend,
 {
+    /// Resolves one configured channel handle for runtime writes.
+    ///
+    /// Handles are tied to the driver instance that produced them. A handle
+    /// from another driver is rejected even if its logical channel index
+    /// happens to match one in this driver.
     pub fn channel<'a>(
         &'a mut self,
         channel: Channel,

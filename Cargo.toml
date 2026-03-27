@@ -4,6 +4,17 @@ version = "0.1.0"
 edition.workspace = true
 
 [features]
+# Packing policy features are exclusive per axis.
+# Supported compile matrix:
+# - default
+# - --no-default-features --features pack-td-none,pack-sq-none
+# - --no-default-features --features pack-td-none,pack-sq-bayer
+# - --no-default-features --features pack-td-bayer,pack-sq-none
+# - --no-default-features --features pack-td-bayer,pack-sq-bayer
+# `--all-features` is intentionally unsupported and should fail with the
+# compile_error! guards in `src/pack/mod.rs`.
+# Revisit this only if external library/tooling requirements or new policy axes
+# make additive feature behavior materially valuable.
 default = ["pack-td-none", "pack-sq-none"]
 pack-td-none = []
 pack-td-bayer = []

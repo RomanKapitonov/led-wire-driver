@@ -1,16 +1,44 @@
-use super::{
-    convert::WireColor, error::PackError, layout::layout_map, spatial::SpatialQuantizer,
-    temporal::TemporalDither,
-};
-use crate::model::{FrameEpoch, PixelLayout};
+use super::{spatial::SpatialQuantizer, temporal::TemporalDither};
+use crate::model::{FrameEpoch, PixelLayout, Rgb48};
 
-#[cfg(feature = "pack-sq-none")]
-#[inline(always)]
-fn downscale_to_u8(value: u16) -> u8 {
-    (value >> 8) as u8
+/// Converts a driver-native sample into 16-bit linear wire channels.
+pub trait WireColor {
+    fn to_wire(&self) -> [u16; 3];
+    fn is_off(&self) -> bool;
 }
 
-#[cfg(feature = "pack-td-bayer")]
+impl WireColor for Rgb48 {
+    #[inline(always)]
+    fn to_wire(&self) -> [u16; 3] {
+        [self.r, self.g, self.b]
+    }
+
+    #[inline(always)]
+    fn is_off(&self) -> bool {
+        (self.r | self.g | self.b) == 0
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PackError {
+    SourceLengthMismatch {
+        source_pixels: usize,
+        target_pixels: usize,
+    },
+}
+
+/// Returns the write index for (r, g, b) channels in the wire triplet.
+const fn layout_map(layout: PixelLayout) -> [usize; 3] {
+    match layout {
+        PixelLayout::Grb => [1, 0, 2],
+        PixelLayout::Rgb => [0, 1, 2],
+        PixelLayout::Bgr => [2, 1, 0],
+        PixelLayout::Rbg => [0, 2, 1],
+        PixelLayout::Gbr => [1, 2, 0],
+        PixelLayout::Brg => [2, 0, 1],
+    }
+}
+
 #[inline(always)]
 fn temporal_offset<TD>(frame: FrameEpoch) -> i16
 where
@@ -19,43 +47,17 @@ where
     TD::default().offset(frame)
 }
 
-#[cfg(feature = "pack-td-none")]
-#[inline(always)]
-fn temporal_offset<TD>(_frame: FrameEpoch) -> i16
-where
-    TD: TemporalDither + Default,
-{
-    0
-}
-
-#[cfg(feature = "pack-td-bayer")]
 #[inline(always)]
 fn apply_temporal(value: u16, t_nudge: i16) -> u16 {
     value.saturating_add_signed(t_nudge)
 }
 
-#[cfg(feature = "pack-td-none")]
-#[inline(always)]
-fn apply_temporal(value: u16, _t_nudge: i16) -> u16 {
-    value
-}
-
-#[cfg(feature = "pack-sq-bayer")]
 #[inline(always)]
 fn quantize_channel<SQ>(quantizer: &mut SQ, value: u16, index: usize) -> u8
 where
     SQ: SpatialQuantizer,
 {
     quantizer.quantize(value, index)
-}
-
-#[cfg(feature = "pack-sq-none")]
-#[inline(always)]
-fn quantize_channel<SQ>(_quantizer: &mut SQ, value: u16, _index: usize) -> u8
-where
-    SQ: SpatialQuantizer,
-{
-    downscale_to_u8(value)
 }
 
 #[inline(always)]
@@ -128,4 +130,155 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pack::{spatial::SpatialQuantizer, temporal::TemporalDither};
+
+    #[derive(Default)]
+    struct NoopTemporal;
+
+    impl TemporalDither for NoopTemporal {
+        fn offset(&self, _frame: FrameEpoch) -> i16 {
+            0
+        }
+    }
+
+    #[derive(Default)]
+    struct NudgeTemporal;
+
+    impl TemporalDither for NudgeTemporal {
+        fn offset(&self, _frame: FrameEpoch) -> i16 {
+            256
+        }
+    }
+
+    #[derive(Default)]
+    struct ShiftSpatial;
+
+    impl SpatialQuantizer for ShiftSpatial {
+        fn quantize(&mut self, value: u16, _index: usize) -> u8 {
+            (value >> 8) as u8
+        }
+    }
+
+    #[test]
+    fn rejects_source_length_mismatch() {
+        let source = [Rgb48 { r: 0, g: 0, b: 0 }];
+        let mut target = [0u8; 6];
+
+        let err = pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut target,
+            PixelLayout::Rgb,
+            FrameEpoch::ZERO,
+        )
+        .expect_err("length mismatch should be rejected");
+
+        assert_eq!(
+            err,
+            PackError::SourceLengthMismatch {
+                source_pixels: 1,
+                target_pixels: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn maps_layout_indices_correctly() {
+        let source = [Rgb48 {
+            r: 0x1100,
+            g: 0x2200,
+            b: 0x3300,
+        }];
+
+        let mut rgb = [0u8; 3];
+        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut rgb,
+            PixelLayout::Rgb,
+            FrameEpoch::ZERO,
+        )
+        .expect("rgb layout should pack");
+        assert_eq!(rgb, [0x11, 0x22, 0x33]);
+
+        let mut grb = [0u8; 3];
+        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut grb,
+            PixelLayout::Grb,
+            FrameEpoch::ZERO,
+        )
+        .expect("grb layout should pack");
+        assert_eq!(grb, [0x22, 0x11, 0x33]);
+
+        let mut brg = [0u8; 3];
+        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut brg,
+            PixelLayout::Brg,
+            FrameEpoch::ZERO,
+        )
+        .expect("brg layout should pack");
+        assert_eq!(brg, [0x22, 0x33, 0x11]);
+    }
+
+    #[test]
+    fn off_pixels_zero_the_target_chunk() {
+        let source = [
+            Rgb48 { r: 0, g: 0, b: 0 },
+            Rgb48 {
+                r: 0x0100,
+                g: 0x0200,
+                b: 0x0300,
+            },
+        ];
+        let mut target = [0xFFu8; 6];
+
+        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut target,
+            PixelLayout::Rgb,
+            FrameEpoch::ZERO,
+        )
+        .expect("pack should succeed");
+
+        assert_eq!(&target[..3], &[0, 0, 0]);
+        assert_eq!(&target[3..], &[0x01, 0x02, 0x03]);
+    }
+
+    #[test]
+    fn temporal_and_spatial_policies_affect_output() {
+        let source = [Rgb48 { r: 0, g: 0, b: 0 }];
+        let mut target = [0xAAu8; 3];
+
+        pack_into_bytes::<NudgeTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut target,
+            PixelLayout::Rgb,
+            FrameEpoch::ZERO,
+        )
+        .expect("pack should succeed");
+
+        assert_eq!(target, [0, 0, 0]);
+
+        let source = [Rgb48 {
+            r: 0x0001,
+            g: 0x0001,
+            b: 0x0001,
+        }];
+        let mut target = [0u8; 3];
+
+        pack_into_bytes::<NudgeTemporal, ShiftSpatial, Rgb48>(
+            &source,
+            &mut target,
+            PixelLayout::Rgb,
+            FrameEpoch::ZERO,
+        )
+        .expect("temporal nudge should affect quantized output");
+
+        assert_eq!(target, [1, 1, 1]);
+    }
 }

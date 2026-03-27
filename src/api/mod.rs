@@ -7,8 +7,9 @@
 //!   one single-shot call to [`Driver::configure_prepared`]
 //! - runtime channel writes through `driver.channel(channel).write_rgb48(...)`
 //! - submission through [`Driver::commit`]
-//! - backend ingress through [`Driver::on_backend_signal`] and
-//!   [`Driver::on_backend_event`]
+//! - backend ingress through [`Driver::on_backend_signal`] for backend-private
+//!   low-level signals and [`Driver::on_backend_event`] for semantic backend
+//!   events
 //! - backend implementation contracts through [`backend`]
 //!
 //! Buffer provisioning is backend-owned and is intentionally outside this API.
@@ -69,12 +70,16 @@
 //!   transport fault
 pub mod backend;
 
+pub(crate) mod channel;
 mod driver;
 mod error_map;
-pub(crate) mod types;
+pub(crate) mod errors;
+pub(crate) mod setup;
+#[cfg(test)]
+mod tests;
 
+pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb48};
+pub use channel::ConfiguredChannels;
 pub use driver::{Configuring, Driver, Ready};
-pub use types::{
-    BackendChannelId, ChannelId, ConfiguredChannels, DriverInitError, PixelLayout, PreparedBinding,
-    PreparedSetup, RegisterError, Rgb48, RuntimeError, SetupBuildError,
-};
+pub use errors::{DriverInitError, RegisterError, RuntimeError};
+pub use setup::{PreparedBinding, PreparedSetup, SetupBuildError};

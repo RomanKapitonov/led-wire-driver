@@ -36,8 +36,24 @@ impl FrameEpoch {
 pub struct ChannelId(u8);
 
 impl ChannelId {
+    pub const CARDINALITY: usize = (u8::MAX as usize) + 1;
+
+    /// Unchecked logical channel label.
+    ///
+    /// Validity is contextual: a `ChannelId` may still be absent from a given
+    /// prepared setup or driver instance.
     pub const fn new(raw: u8) -> Self {
         Self(raw)
+    }
+
+    /// Converts a driver-visible logical channel index into a `ChannelId` when
+    /// it fits in the identifier representation.
+    pub const fn from_index(index: usize) -> Option<Self> {
+        if index < Self::CARDINALITY {
+            Some(Self(index as u8))
+        } else {
+            None
+        }
     }
 
     pub const fn as_index(self) -> usize {
@@ -50,6 +66,11 @@ impl ChannelId {
 pub struct BackendChannelId(u8);
 
 impl BackendChannelId {
+    pub const CARDINALITY: usize = (u8::MAX as usize) + 1;
+
+    /// Unchecked backend-owned channel label.
+    ///
+    /// Validity is contextual and depends on the concrete backend instance.
     pub const fn new(raw: u8) -> Self {
         Self(raw)
     }

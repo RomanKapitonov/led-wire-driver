@@ -1,10 +1,29 @@
-use super::types::{DriverInitError, RegisterError, RuntimeError};
+//! Public API projection of the internal engine error taxonomy.
+//!
+//! Mapping policy:
+//! - each public boundary must explicitly enumerate the engine errors it
+//!   expects to receive
+//! - path-impossible engine errors are treated as maintenance backstops rather
+//!   than broadened into misleading public categories
+//! - [`unexpected_engine_error`] is therefore intentionally narrow and should
+//!   only remain for impossible API-path cases
+
+use super::errors::{DriverInitError, RegisterError, RuntimeError};
 use crate::{api::backend::BackendError, engine::EngineError};
 
 pub(super) fn map_driver_init_error(err: EngineError) -> DriverInitError {
     match err {
         EngineError::Backend(_) => DriverInitError::Backend,
-        _ => unexpected_driver_init_error(err, "engine.init"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelOutOfRange
+        | EngineError::ChannelNotRegistered
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy
+        | EngineError::BackendContractViolation(_) => {
+            unexpected_engine_error("engine.init", err, DriverInitError::Backend)
+        }
     }
 }
 
@@ -17,7 +36,12 @@ pub(super) fn map_register_bind_error(err: EngineError) -> RegisterError {
         EngineError::BackendContractViolation(_) => RegisterError::InvalidBinding,
         EngineError::Backend(BackendError::InvalidBinding) => RegisterError::InvalidBinding,
         EngineError::Backend(BackendError::TransportFault { .. }) => RegisterError::Backend,
-        _ => unexpected_register_error(err, "engine registration"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelNotRegistered
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy => {
+            unexpected_engine_error("engine registration", err, RegisterError::Backend)
+        }
     }
 }
 
@@ -29,7 +53,12 @@ pub(super) fn map_runtime_write_prepare_error(err: EngineError) -> RuntimeError 
         }
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "engine.acquire_prepared_write"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. } => {
+            unexpected_engine_error("engine.acquire_prepared_write", err, RuntimeError::Backend)
+        }
     }
 }
 
@@ -38,7 +67,16 @@ pub(super) fn map_runtime_write_pack_error(err: EngineError) -> RuntimeError {
         EngineError::SourceLengthMismatch { .. } => RuntimeError::LengthMismatch,
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "prepared_write.pack_rgb48_active"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelOutOfRange
+        | EngineError::ChannelNotRegistered
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::WriteBusy => unexpected_engine_error(
+            "prepared_write.pack_rgb48_active",
+            err,
+            RuntimeError::Backend,
+        ),
     }
 }
 
@@ -49,7 +87,13 @@ pub(super) fn map_runtime_write_publish_error(err: EngineError) -> RuntimeError 
         }
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "prepared_write.publish"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy => {
+            unexpected_engine_error("prepared_write.publish", err, RuntimeError::Backend)
+        }
     }
 }
 
@@ -60,7 +104,13 @@ pub(super) fn map_runtime_mark_published_error(err: EngineError) -> RuntimeError
         }
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "engine.mark_channel_published"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy => {
+            unexpected_engine_error("engine.mark_channel_published", err, RuntimeError::Backend)
+        }
     }
 }
 
@@ -71,7 +121,13 @@ pub(super) fn map_runtime_commit_error(err: EngineError) -> RuntimeError {
         }
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "engine.submit_dirty"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy => {
+            unexpected_engine_error("engine.submit_dirty", err, RuntimeError::Backend)
+        }
     }
 }
 
@@ -79,33 +135,22 @@ pub(super) fn map_runtime_service_error(err: EngineError) -> RuntimeError {
     match err {
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
-        _ => unexpected_runtime_error(err, "engine.service"),
+        EngineError::InvalidState(_)
+        | EngineError::ChannelOutOfRange
+        | EngineError::ChannelNotRegistered
+        | EngineError::ChannelAlreadyRegistered
+        | EngineError::ConfigurationLimitExceeded
+        | EngineError::SourceLengthMismatch { .. }
+        | EngineError::WriteBusy => {
+            unexpected_engine_error("engine.service", err, RuntimeError::Backend)
+        }
     }
 }
 
-fn unexpected_register_error(err: EngineError, operation: &'static str) -> RegisterError {
-    debug_assert!(
-        false,
-        "unexpected register-phase engine error in {}: {:?}",
-        operation, err
-    );
-    RegisterError::Backend
-}
-
-fn unexpected_driver_init_error(err: EngineError, operation: &'static str) -> DriverInitError {
-    debug_assert!(
-        false,
-        "unexpected init-phase engine error in {}: {:?}",
-        operation, err
-    );
-    DriverInitError::Backend
-}
-
-fn unexpected_runtime_error(err: EngineError, operation: &'static str) -> RuntimeError {
-    debug_assert!(
-        false,
-        "unexpected runtime-phase engine error in {}: {:?}",
-        operation, err
-    );
-    RuntimeError::Backend
+#[cold]
+fn unexpected_engine_error<T>(operation: &'static str, err: EngineError, fallback: T) -> T {
+    // Maintenance backstop for engine errors that should be unreachable on a
+    // given public API path. Reachable cases must be matched explicitly above.
+    debug_assert!(false, "unexpected engine error in {}: {:?}", operation, err);
+    fallback
 }

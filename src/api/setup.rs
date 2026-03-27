@@ -1,7 +1,9 @@
 use heapless::Vec;
 
-use crate::DRIVER_MAX_CHANNELS;
-pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb48};
+use crate::{
+    DRIVER_MAX_CHANNELS,
+    model::{BackendChannelId, ChannelId, PixelLayout},
+};
 
 /// One validated structural mapping from a logical driver channel to one
 /// backend-owned wire target.
@@ -51,7 +53,7 @@ impl SetupDraft {
 
     fn validate(self) -> Result<PreparedSetup, SetupBuildError> {
         let mut seen_logical = [false; DRIVER_MAX_CHANNELS];
-        let mut seen_backend = [false; (u8::MAX as usize) + 1];
+        let mut seen_backend = [false; BackendChannelId::CARDINALITY];
 
         for binding in &self.bindings {
             let logical_index = binding.logical_channel.as_index();
@@ -138,74 +140,4 @@ impl PreparedSetup {
     pub fn iter(&self) -> impl Iterator<Item = &PreparedBinding> + '_ {
         self.bindings().iter()
     }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct Channel {
-    driver_id: u32,
-    index: u8,
-}
-
-impl Channel {
-    pub(crate) const fn new(driver_id: u32, index: u8) -> Self {
-        Self { driver_id, index }
-    }
-
-    pub(super) const fn owner(self) -> u32 {
-        self.driver_id
-    }
-
-    pub(crate) const fn as_index(self) -> usize {
-        self.index as usize
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct ConfiguredChannels {
-    entries: [Option<Channel>; DRIVER_MAX_CHANNELS],
-}
-
-impl ConfiguredChannels {
-    pub(crate) const fn from_entries(entries: [Option<Channel>; DRIVER_MAX_CHANNELS]) -> Self {
-        Self { entries }
-    }
-
-    pub fn get(&self, id: ChannelId) -> Option<Channel> {
-        self.entries.get(id.as_index()).copied().flatten()
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum RegisterError {
-    /// The setup or backend binding shape is invalid for this driver/backend.
-    InvalidBinding,
-    /// Two bindings resolved to the same logical channel during registration.
-    DuplicateChannel,
-    /// The caller attempted to configure with an empty prepared setup.
-    EmptyConfiguration,
-    /// The driver already committed one configuration; registration is
-    /// single-shot.
-    AlreadyConfigured,
-    /// Backend configuration failed for a backend-owned reason.
-    Backend,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum DriverInitError {
-    /// Backend initialization failed before the driver entered registration.
-    Backend,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum RuntimeError {
-    /// The backend cannot currently hand out a writable target.
-    Busy,
-    /// The supplied channel handle is invalid for this driver or channel.
-    InvalidChannel,
-    /// The supplied source slice length does not match the configured channel.
-    LengthMismatch,
-    /// The backend violated a runtime contract expected by the driver.
-    BackendContract,
-    /// A genuine backend-owned runtime failure occurred.
-    Backend,
 }

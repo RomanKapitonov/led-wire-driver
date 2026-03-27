@@ -2,10 +2,7 @@ use super::EngineError;
 use crate::{
     api::backend::{BackendWriteLease, LedBackend},
     model::{FrameEpoch, PixelLayout, Rgb48},
-    pack::{
-        ActiveSpatialQuantizer, ActiveTemporalDither, PackError, SpatialQuantizer, TemporalDither,
-        WireColor, pack_into_bytes,
-    },
+    pack::{PackError, pack_rgb48_active},
 };
 
 /// Engine-owned owner for one acquired backend write lease.
@@ -29,17 +26,8 @@ where
     B: LedBackend,
 {
     pub fn pack_rgb48_active(&mut self, source: &[Rgb48]) -> Result<(), EngineError> {
-        self.pack_slice_with::<Rgb48, ActiveTemporalDither, ActiveSpatialQuantizer>(source)
-    }
-
-    fn pack_slice_with<Color, TD, SQ>(&mut self, source: &[Color]) -> Result<(), EngineError>
-    where
-        Color: WireColor + Copy,
-        TD: TemporalDither + Default,
-        SQ: SpatialQuantizer + Default,
-    {
         let target = self.lease.bytes_mut();
-        pack_into_bytes::<TD, SQ, Color>(source, target, self.layout, self.frame_phase).map_err(
+        pack_rgb48_active(source, target, self.layout, self.frame_phase).map_err(
             |err| match err {
                 PackError::SourceLengthMismatch {
                     source_pixels,

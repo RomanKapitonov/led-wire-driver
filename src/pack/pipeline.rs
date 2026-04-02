@@ -8,12 +8,12 @@ pub trait WireColor {
 }
 
 impl WireColor for Rgb48 {
-    // #[inline(always)]
+    
     fn to_wire(&self) -> [u16; 3] {
         [self.r, self.g, self.b]
     }
 
-    // #[inline(always)]
+    
     fn is_off(&self) -> bool {
         (self.r | self.g | self.b) == 0
     }
@@ -39,7 +39,7 @@ const fn layout_map(layout: PixelLayout) -> [usize; 3] {
     }
 }
 
-// #[inline(always)]
+
 fn temporal_offset<TD>(frame: FrameEpoch) -> i16
 where
     TD: TemporalDither + Default,
@@ -47,12 +47,12 @@ where
     TD::default().offset(frame)
 }
 
-// #[inline(always)]
+
 fn apply_temporal(value: u16, t_nudge: i16) -> u16 {
     value.saturating_add_signed(t_nudge)
 }
 
-// #[inline(always)]
+
 fn quantize_channel<SQ>(quantizer: &mut SQ, value: u16, index: usize) -> u8
 where
     SQ: SpatialQuantizer,
@@ -60,7 +60,7 @@ where
     quantizer.quantize(value, index)
 }
 
-// #[inline(always)]
+
 fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_INDEX: usize>(
     source: &[C],
     target_bytes: &mut [u8],

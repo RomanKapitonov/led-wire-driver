@@ -22,9 +22,9 @@ mod pipeline;
 mod spatial;
 mod temporal;
 
-use crate::model::{FrameEpoch, PixelLayout, Rgb48};
-
 pub(crate) use pipeline::PackError;
+
+use crate::model::{FrameEpoch, PixelLayout, Rgb48};
 
 #[cfg(all(feature = "pack-td-none", feature = "pack-td-bayer"))]
 compile_error!("Select exactly one temporal dithering policy feature.");

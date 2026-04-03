@@ -78,8 +78,9 @@ pub(crate) mod setup;
 #[cfg(test)]
 mod tests;
 
-pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb48};
 pub use channel::ConfiguredChannels;
 pub use driver::{Configuring, Driver, Ready};
 pub use errors::{DriverInitError, RegisterError, RuntimeError};
 pub use setup::{PreparedBinding, PreparedSetup, SetupBuildError};
+
+pub use crate::model::{BackendChannelId, ChannelId, PixelLayout, Rgb48};

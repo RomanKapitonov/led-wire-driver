@@ -13,6 +13,13 @@
 use heapless::Vec;
 
 use super::{EngineError, mask::ChannelMask};
+
+const _: () = {
+    assert!(
+        DRIVER_MAX_CHANNELS <= u8::MAX as usize,
+        "DRIVER_MAX_CHANNELS exceeds u8 capacity; update ChannelId storage before raising this limit"
+    );
+};
 use crate::{
     DRIVER_MAX_CHANNELS,
     api::{
@@ -153,10 +160,6 @@ impl RegistrationPlan {
                 layout: record.layout(),
             };
 
-            debug_assert!(
-                DRIVER_MAX_CHANNELS <= u8::MAX as usize,
-                "Channel handle index storage assumes DRIVER_MAX_CHANNELS fits in u8"
-            );
             let logical_channel = ChannelId::from_index(channel_index)
                 .expect("registration plan channel index must fit in ChannelId");
             handles[channel_index] = Some(Channel::new(driver_id, logical_channel));

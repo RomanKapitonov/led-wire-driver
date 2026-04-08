@@ -79,7 +79,7 @@ pub(crate) mod setup;
 mod tests;
 
 pub use channel::ConfiguredChannels;
-pub use driver::{Configuring, Driver, Ready};
+pub use driver::{ChannelWriter, Configuring, Driver, Ready};
 pub use errors::{DriverInitError, RegisterError, RuntimeError};
 pub use setup::{PreparedBinding, PreparedSetup, SetupBuildError};
 

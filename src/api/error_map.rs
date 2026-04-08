@@ -7,6 +7,9 @@
 //!   than broadened into misleading public categories
 //! - [`unexpected_engine_error`] is therefore intentionally narrow and should
 //!   only remain for impossible API-path cases
+//!
+//! For a worked example of why each impossible case is unreachable on its
+//! specific call path, see the comments in [`map_runtime_write_prepare_error`].
 
 use super::errors::{DriverInitError, RegisterError, RuntimeError};
 use crate::{api::backend::BackendError, engine::EngineError};
@@ -45,6 +48,10 @@ pub(super) fn map_register_bind_error(err: EngineError) -> RegisterError {
     }
 }
 
+/// Canonical example of the impossible-case pattern used across all mapping
+/// functions. Each `unexpected_engine_error` arm below notes why that variant
+/// cannot reach this call site; the other mapping functions follow the same
+/// reasoning without repeating it in full.
 pub(super) fn map_runtime_write_prepare_error(err: EngineError) -> RuntimeError {
     match err {
         EngineError::WriteBusy => RuntimeError::Busy,
@@ -53,6 +60,11 @@ pub(super) fn map_runtime_write_prepare_error(err: EngineError) -> RuntimeError 
         }
         EngineError::BackendContractViolation(_) => RuntimeError::BackendContract,
         EngineError::Backend(_) => RuntimeError::Backend,
+        // Impossible on this path:
+        // - InvalidState: lifecycle state is validated before any write attempt
+        // - ChannelAlreadyRegistered: duplicate check happens at registration, not write time
+        // - ConfigurationLimitExceeded: limit check happens at registration, not write time
+        // - SourceLengthMismatch: length is checked during pack, not during prepare
         EngineError::InvalidState(_)
         | EngineError::ChannelAlreadyRegistered
         | EngineError::ConfigurationLimitExceeded

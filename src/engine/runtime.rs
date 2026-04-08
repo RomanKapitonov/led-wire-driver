@@ -235,37 +235,28 @@ where
 
     pub fn service(&mut self) -> Result<(), EngineError> {
         self.surface_latched_ingress_violation()?;
-        {
-            let ready = match self.state.ready_mut() {
-                Ok(ready) => ready,
-                Err(_) => return Ok(()),
-            };
-            if let TransferState::InFlight {
-                dma_complete_pending: true,
-                submitted_mask: _submitted_mask,
-            } = ready.transfer
-            {
-                ready.transfer = TransferState::Idle;
-            }
-        }
-
-        {
-            let ready = match self.state.ready() {
-                Ok(ready) => ready,
-                Err(err) => {
-                    debug_assert!(
-                        self.state.is_ready(),
-                        "service transfer check reached with non-ready engine state"
-                    );
-                    return Err(err);
-                }
-            };
-            if !matches!(ready.transfer, TransferState::Idle) {
-                return Ok(());
-            }
-        }
-
+        // Phase 1: clear any completed in-flight transfer before initiating new work.
+        self.complete_in_flight_if_ready()?;
         self.try_start_pending_submit()
+    }
+
+    /// Clears a completed in-flight transfer so the engine returns to idle.
+    ///
+    /// Returns `Ok(())` immediately if the engine is not in the ready state.
+    /// Does nothing if no transfer is pending completion.
+    fn complete_in_flight_if_ready(&mut self) -> Result<(), EngineError> {
+        let ready = match self.state.ready_mut() {
+            Ok(ready) => ready,
+            Err(_) => return Ok(()),
+        };
+        if let TransferState::InFlight {
+            dma_complete_pending: true,
+            submitted_mask: _submitted_mask,
+        } = ready.transfer
+        {
+            ready.transfer = TransferState::Idle;
+        }
+        Ok(())
     }
 
     /// Starts pending submission only from idle and only for the exact
@@ -287,6 +278,10 @@ where
                 return Err(err);
             }
         };
+
+        if !matches!(ready.transfer, TransferState::Idle) {
+            return Ok(());
+        }
 
         if ready.pending_mask.is_empty() {
             return Ok(());

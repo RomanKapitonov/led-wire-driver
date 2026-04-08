@@ -113,6 +113,9 @@ where
         });
     }
 
+    // Each arm destructures the layout permutation from layout_map() and passes
+    // the three indices directly as const generics. Keep the match pattern and
+    // the type parameters in sync: [r, g, b] => pack_kernel::<..., r, g, b>.
     match layout_map(layout) {
         [0, 1, 2] => pack_kernel::<TD, SQ, C, 0, 1, 2>(source, target_bytes, frame),
         [0, 2, 1] => pack_kernel::<TD, SQ, C, 0, 2, 1>(source, target_bytes, frame),

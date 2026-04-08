@@ -31,6 +31,10 @@ static NEXT_DRIVER_ID: AtomicU32 = AtomicU32::new(1);
 /// - `DriverId(0)` is reserved and must never be handed out,
 /// - the allocator only provides uniqueness, so `Relaxed` ordering is
 ///   sufficient.
+///
+/// Contention is expected to be negligible: drivers are created once at
+/// startup, not repeatedly at runtime. The spin-loop hint signals intent
+/// to the CPU but no backoff is needed.
 fn allocate_driver_id() -> DriverId {
     let mut current = NEXT_DRIVER_ID.load(Ordering::Relaxed);
     loop {
@@ -43,7 +47,10 @@ fn allocate_driver_id() -> DriverId {
             Ordering::Relaxed,
         ) {
             Ok(_) => return DriverId::new(raw),
-            Err(observed) => current = observed,
+            Err(observed) => {
+                core::hint::spin_loop();
+                current = observed;
+            }
         }
     }
 }
@@ -168,23 +175,24 @@ where
     B: LedBackend,
 {
     pub fn write_rgb48(&mut self, pixels: &[Rgb48]) -> Result<(), RuntimeError> {
-        {
-            let mut write = self
-                .driver
-                .engine
-                .acquire_prepared_write(self.channel_index)
-                .map_err(map_runtime_write_prepare_error)?;
-
-            write
-                .pack_rgb48_active(pixels)
-                .map_err(map_runtime_write_pack_error)?;
-
-            write.publish().map_err(map_runtime_write_publish_error)?;
-        }
-
+        self.acquire_pack_and_publish(pixels)?;
         self.driver
             .engine
             .mark_channel_published(self.channel_index)
             .map_err(map_runtime_mark_published_error)
+    }
+
+    fn acquire_pack_and_publish(&mut self, pixels: &[Rgb48]) -> Result<(), RuntimeError> {
+        let mut write = self
+            .driver
+            .engine
+            .acquire_prepared_write(self.channel_index)
+            .map_err(map_runtime_write_prepare_error)?;
+
+        write
+            .pack_rgb48_active(pixels)
+            .map_err(map_runtime_write_pack_error)?;
+
+        write.publish().map_err(map_runtime_write_publish_error)
     }
 }

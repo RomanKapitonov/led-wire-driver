@@ -8,6 +8,7 @@ pub enum PixelLayout {
     Brg,
 }
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Rgb48 {
     pub r: u16,

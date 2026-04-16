@@ -1,1 +1,24 @@
+# Cargo build output
 /target/
+**/target/
+
+# Cargo lock for libraries (uncomment if this crate is strictly a library)
+# Cargo.lock
+
+# Rustc / IDE / tooling
+**/*.rs.bk
+*.pdb
+*.orig
+*.rej
+
+# Editor / IDE
+.vscode/
+.idea/
+*.iml
+*.swp
+*.swo
+.DS_Store
+
+# Env / secrets
+.env
+.env.local

@@ -1,38 +1,38 @@
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct ChannelMask(u32);
+pub(in crate::driver) struct ChannelMask(u32);
 
 impl ChannelMask {
-    pub(super) const EMPTY: Self = Self(0);
-    pub(super) const CAPACITY_BITS: usize = u32::BITS as usize;
+    pub(in crate::driver) const EMPTY: Self = Self(0);
+    pub(in crate::driver) const CAPACITY_BITS: usize = u32::BITS as usize;
 
-    pub(super) const fn from_bits(bits: u32) -> Self {
+    pub(in crate::driver) const fn from_bits(bits: u32) -> Self {
         Self(bits)
     }
 
-    pub(super) const fn bits(self) -> u32 {
+    pub(in crate::driver) const fn bits(self) -> u32 {
         self.0
     }
 
     /// Returns a mask with exactly one bit set at `index`.
     /// Caller must ensure `index < DRIVER_MAX_CHANNELS <= CAPACITY_BITS`.
-    pub(super) fn single(index: usize) -> Self {
+    pub(in crate::driver) fn single(index: usize) -> Self {
         debug_assert!(index < Self::CAPACITY_BITS, "channel index exceeds mask capacity");
         Self(1u32 << index)
     }
 
-    pub(super) const fn union(self, other: Self) -> Self {
+    pub(in crate::driver) const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
-    pub(super) fn contains(self, index: usize) -> bool {
+    pub(in crate::driver) fn contains(self, index: usize) -> bool {
         self.0 & (1u32 << index) != 0
     }
 
-    pub(super) const fn is_empty(self) -> bool {
+    pub(in crate::driver) const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    pub(super) const fn exclude(self, other: Self) -> Self {
+    pub(in crate::driver) const fn exclude(self, other: Self) -> Self {
         Self(self.0 & !other.0)
     }
 }

@@ -5,14 +5,14 @@ use super::{
 };
 use crate::DRIVER_MAX_CHANNELS;
 
-pub(super) struct RegistrationTable {
+pub(in crate::driver) struct RegistrationTable {
     records: [Option<ChannelState>; DRIVER_MAX_CHANNELS],
     registered_mask: ChannelMask,
     count: usize,
 }
 
 impl RegistrationTable {
-    pub(super) fn new(
+    pub(in crate::driver) fn new(
         records: [Option<ChannelState>; DRIVER_MAX_CHANNELS],
         count: usize,
     ) -> Self {
@@ -25,25 +25,25 @@ impl RegistrationTable {
         Self { records, registered_mask: mask, count }
     }
 
-    pub(super) fn record(&self, index: usize) -> Result<&ChannelState, EngineError> {
+    pub(in crate::driver) fn record(&self, index: usize) -> Result<&ChannelState, EngineError> {
         self.records
             .get(index)
             .and_then(|s| s.as_ref())
             .ok_or(EngineError::InvalidChannel)
     }
 
-    pub(super) fn record_mut(&mut self, index: usize) -> Result<&mut ChannelState, EngineError> {
+    pub(in crate::driver) fn record_mut(&mut self, index: usize) -> Result<&mut ChannelState, EngineError> {
         self.records
             .get_mut(index)
             .and_then(|s| s.as_mut())
             .ok_or(EngineError::InvalidChannel)
     }
 
-    pub(super) fn registered_mask(&self) -> ChannelMask {
+    pub(in crate::driver) fn registered_mask(&self) -> ChannelMask {
         self.registered_mask
     }
 
-    pub(super) fn count(&self) -> usize {
+    pub(in crate::driver) fn count(&self) -> usize {
         self.count
     }
 }

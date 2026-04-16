@@ -5,17 +5,17 @@ use crate::{
     model::{FrameEpoch, PixelLayout, Rgb48},
 };
 
-pub(super) struct PreparedWrite<'a, B>
+pub(in crate::driver) struct PreparedWrite<'a, B>
 where
     B: LedBackend + 'a,
 {
-    pub(super) layout: PixelLayout,
-    pub(super) frame_phase: FrameEpoch,
-    pub(super) lease: B::WriteLease<'a>,
+    pub(in crate::driver) layout: PixelLayout,
+    pub(in crate::driver) frame_phase: FrameEpoch,
+    pub(in crate::driver) lease: B::WriteLease<'a>,
 }
 
 impl<B: LedBackend> PreparedWrite<'_, B> {
-    pub(super) fn pack_rgb48_active(&mut self, source: &[Rgb48]) -> Result<(), EngineError> {
+    pub(in crate::driver) fn pack_rgb48_active(&mut self, source: &[Rgb48]) -> Result<(), EngineError> {
         let target = self.lease.bytes_mut();
         pack_rgb48_active(source, target, self.layout, self.frame_phase).map_err(
             |err| match err {
@@ -29,7 +29,7 @@ impl<B: LedBackend> PreparedWrite<'_, B> {
         )
     }
 
-    pub(super) fn publish(&mut self) -> Result<(), EngineError> {
+    pub(in crate::driver) fn publish(&mut self) -> Result<(), EngineError> {
         self.lease.publish().map_err(EngineError::Backend)
     }
 }

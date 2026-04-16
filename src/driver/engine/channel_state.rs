@@ -1,17 +1,17 @@
 use crate::model::{BackendChannelId, FrameEpoch, PixelLayout};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct ChannelState {
-    pub(super) backend_channel: BackendChannelId,
-    pub(super) pixel_count: usize,
-    pub(super) layout: PixelLayout,
+pub(in crate::driver) struct ChannelState {
+    pub(in crate::driver) backend_channel: BackendChannelId,
+    pub(in crate::driver) pixel_count: usize,
+    pub(in crate::driver) layout: PixelLayout,
     /// Precomputed: pixel_count * 3 bytes (WS28xx always 24-bit/pixel).
-    pub(super) wire_byte_count: usize,
-    pub(super) frame_phase: FrameEpoch,
+    pub(in crate::driver) wire_byte_count: usize,
+    pub(in crate::driver) frame_phase: FrameEpoch,
 }
 
 impl ChannelState {
-    pub(super) fn new(
+    pub(in crate::driver) fn new(
         backend_channel: BackendChannelId,
         pixel_count: u16,
         layout: PixelLayout,
@@ -25,7 +25,7 @@ impl ChannelState {
         }
     }
 
-    pub(super) fn advance_phase(&mut self) {
+    pub(in crate::driver) fn advance_phase(&mut self) {
         self.frame_phase = self.frame_phase.wrapping_add(1);
     }
 }

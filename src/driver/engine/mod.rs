@@ -1,8 +1,8 @@
-pub(super) mod channel_state;
-pub(super) mod mask;
+pub(in crate::driver) mod channel_state;
+pub(in crate::driver) mod mask;
 mod error;
-pub(super) mod registration;
-pub(super) mod runtime;
+pub(in crate::driver) mod registration;
+pub(in crate::driver) mod runtime;
 mod prepared_write;
 
 pub(in crate::driver) use error::{BackendContractViolation, EngineError};
@@ -18,10 +18,10 @@ use crate::backend::{AcquireWrite, BackendWriteLease, LedBackend};
 const _: () = assert!(DRIVER_MAX_CHANNELS <= ChannelMask::CAPACITY_BITS);
 
 pub(in crate::driver) struct LedEngine<B: LedBackend> {
-    pub(super) backend: B,
-    pub(super) max_channels: usize,
-    pub(super) channels: RegistrationTable,
-    pub(super) ready: ReadyState,
+    pub(in crate::driver) backend: B,
+    pub(in crate::driver) max_channels: usize,
+    pub(in crate::driver) channels: RegistrationTable,
+    pub(in crate::driver) ready: ReadyState,
 }
 
 impl<B: LedBackend> LedEngine<B> {
@@ -33,7 +33,7 @@ impl<B: LedBackend> LedEngine<B> {
         Self { backend, max_channels, channels, ready: ReadyState::new() }
     }
 
-    pub(super) fn acquire_prepared_write(
+    pub(in crate::driver) fn acquire_prepared_write(
         &mut self,
         channel_index: usize,
     ) -> Result<PreparedWrite<'_, B>, EngineError> {

@@ -3,7 +3,7 @@ use super::{EngineError, LedEngine, error::BackendContractViolation, mask::Chann
 use crate::backend::{BackendEvent, BackendSignal, LedBackend, StartTransfer};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum TransferState {
+pub(in crate::driver) enum TransferState {
     Idle,
     InFlight {
         dma_complete_pending: bool,
@@ -12,15 +12,15 @@ pub(super) enum TransferState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct ReadyState {
-    pub(super) transfer: TransferState,
-    pub(super) dirty_mask: ChannelMask,
-    pub(super) pending_mask: ChannelMask,
-    pub(super) ingress_violation: bool,
+pub(in crate::driver) struct ReadyState {
+    pub(in crate::driver) transfer: TransferState,
+    pub(in crate::driver) dirty_mask: ChannelMask,
+    pub(in crate::driver) pending_mask: ChannelMask,
+    pub(in crate::driver) ingress_violation: bool,
 }
 
 impl ReadyState {
-    pub(super) const fn new() -> Self {
+    pub(in crate::driver) const fn new() -> Self {
         Self {
             transfer: TransferState::Idle,
             dirty_mask: ChannelMask::EMPTY,
@@ -40,18 +40,18 @@ impl ReadyState {
 }
 
 impl<B: LedBackend> LedEngine<B> {
-    pub(super) fn surface_latched_violation(&mut self) -> Result<(), EngineError> {
+    pub(in crate::driver) fn surface_latched_violation(&mut self) -> Result<(), EngineError> {
         if let Some(violation) = self.ready.take_ingress_violation() {
             return Err(EngineError::BackendContractViolation(violation));
         }
         Ok(())
     }
 
-    pub(super) fn on_backend_signal(&mut self, signal: BackendSignal) {
+    pub(in crate::driver) fn on_backend_signal(&mut self, signal: BackendSignal) {
         self.backend.on_signal(signal);
     }
 
-    pub(super) fn on_backend_event(&mut self, event: BackendEvent) {
+    pub(in crate::driver) fn on_backend_event(&mut self, event: BackendEvent) {
         self.backend.on_event(event);
         match event {
             BackendEvent::TransferComplete => match &mut self.ready.transfer {
@@ -65,7 +65,7 @@ impl<B: LedBackend> LedEngine<B> {
         }
     }
 
-    pub(super) fn mark_channel_published(
+    pub(in crate::driver) fn mark_channel_published(
         &mut self,
         channel_index: usize,
     ) -> Result<(), EngineError> {
@@ -76,7 +76,7 @@ impl<B: LedBackend> LedEngine<B> {
         Ok(())
     }
 
-    pub(super) fn submit_dirty(&mut self) -> Result<(), EngineError> {
+    pub(in crate::driver) fn submit_dirty(&mut self) -> Result<(), EngineError> {
         self.surface_latched_violation()?;
         let dirty = self.ready.dirty_mask;
         if dirty.is_empty() {
@@ -87,7 +87,7 @@ impl<B: LedBackend> LedEngine<B> {
         Ok(())
     }
 
-    pub(super) fn service(&mut self) -> Result<(), EngineError> {
+    pub(in crate::driver) fn service(&mut self) -> Result<(), EngineError> {
         self.surface_latched_violation()?;
         self.complete_in_flight_if_ready();
         self.try_start_pending_submit()

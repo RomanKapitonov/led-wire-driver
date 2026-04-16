@@ -2,7 +2,7 @@ use std::vec;
 
 use super::{
     EngineError, LedEngine,
-    runtime::{IngressViolation, TransferState},
+    runtime::TransferState,
 };
 use crate::{
     api::{
@@ -221,10 +221,7 @@ fn transfer_complete_while_idle_is_latched_as_ingress_violation() {
 
     let ready = engine.state.ready().expect("engine should be ready");
     assert_eq!(ready.transfer, TransferState::Idle);
-    assert_eq!(
-        ready.ingress_violation,
-        Some(IngressViolation::TransferCompleteWhileIdle)
-    );
+    assert!(ready.ingress_violation);
     assert_eq!(handle.log().events, vec![BackendEvent::TransferComplete]);
 }
 
@@ -245,7 +242,7 @@ fn latched_ingress_violation_surfaces_once_on_service() {
     );
 
     let ready = engine.state.ready().expect("engine should stay ready");
-    assert_eq!(ready.ingress_violation, None);
+    assert!(!ready.ingress_violation);
 
     engine
         .service()

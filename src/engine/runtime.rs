@@ -44,11 +44,6 @@ pub(super) enum TransferState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum IngressViolation {
-    TransferCompleteWhileIdle,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub(super) struct ReadyState {
     /// Transfer ownership currently held by backend transport, if any.
     pub transfer: TransferState,
@@ -57,7 +52,7 @@ pub(super) struct ReadyState {
     /// Channels ready to retry until transport accepts them.
     pub pending_mask: ChannelMask,
     /// Latched ingress contract violation to surface on the next runtime call.
-    pub ingress_violation: Option<IngressViolation>,
+    pub ingress_violation: bool,
 }
 
 impl ReadyState {
@@ -66,16 +61,17 @@ impl ReadyState {
             transfer: TransferState::Idle,
             dirty_mask: ChannelMask::ZERO,
             pending_mask: ChannelMask::ZERO,
-            ingress_violation: None,
+            ingress_violation: false,
         }
     }
 
     fn take_ingress_violation(&mut self) -> Option<super::BackendContractViolation> {
-        self.ingress_violation
-            .take()
-            .map(|IngressViolation::TransferCompleteWhileIdle| {
-                super::BackendContractViolation::TransferCompleteWhileIdle
-            })
+        if self.ingress_violation {
+            self.ingress_violation = false;
+            Some(super::BackendContractViolation::TransferCompleteWhileIdle)
+        } else {
+            None
+        }
     }
 }
 
@@ -226,7 +222,7 @@ where
                     {
                         *dma_complete_pending = true;
                     } else {
-                        ready.ingress_violation = Some(IngressViolation::TransferCompleteWhileIdle);
+                        ready.ingress_violation = true;
                     }
                 }
             }

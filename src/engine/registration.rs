@@ -31,43 +31,11 @@ use crate::{
 };
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ChannelMeta {
+pub(crate) struct ChannelState {
     pub len_pixels: usize,
     pub layout: PixelLayout,
     pub backend_channel: BackendChannelId,
-}
-
-impl ChannelMeta {
-    pub const fn new(
-        backend_channel: BackendChannelId,
-        len_pixels: usize,
-        layout: PixelLayout,
-    ) -> Self {
-        Self {
-            len_pixels,
-            layout,
-            backend_channel,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ChannelRuntime {
     pub frame_phase: FrameEpoch,
-}
-
-impl ChannelRuntime {
-    pub const fn new() -> Self {
-        Self {
-            frame_phase: FrameEpoch::ZERO,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ChannelState {
-    pub meta: ChannelMeta,
-    pub runtime: ChannelRuntime,
 }
 
 impl ChannelState {
@@ -77,29 +45,15 @@ impl ChannelState {
         layout: PixelLayout,
     ) -> Self {
         Self {
-            meta: ChannelMeta::new(backend_channel, len_pixels, layout),
-            runtime: ChannelRuntime::new(),
+            len_pixels,
+            backend_channel,
+            layout,
+            frame_phase: FrameEpoch::ZERO,
         }
     }
 
-    pub const fn len_pixels(self) -> usize {
-        self.meta.len_pixels
-    }
-
-    pub const fn layout(self) -> PixelLayout {
-        self.meta.layout
-    }
-
-    pub const fn backend_channel(self) -> BackendChannelId {
-        self.meta.backend_channel
-    }
-
-    pub const fn frame_phase(self) -> FrameEpoch {
-        self.runtime.frame_phase
-    }
-
     pub fn advance_phase(&mut self) {
-        self.runtime.frame_phase = self.runtime.frame_phase.wrapping_add(1);
+        self.frame_phase = self.frame_phase.wrapping_add(1);
     }
 }
 
@@ -154,10 +108,10 @@ impl RegistrationPlan {
                 binding.layout,
             );
             let spec = BackendChannelSpec {
-                channel: record.backend_channel(),
-                pixels: u16::try_from(record.len_pixels())
+                channel: record.backend_channel,
+                pixels: u16::try_from(record.len_pixels)
                     .map_err(|_| EngineError::ChannelOutOfRange)?,
-                layout: record.layout(),
+                layout: record.layout,
             };
 
             let logical_channel = ChannelId::from_index(channel_index)

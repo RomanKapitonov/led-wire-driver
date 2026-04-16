@@ -144,7 +144,7 @@ where
         let channel = self.channels.record(channel_index, self.max_channels())?;
         let lease = self
             .backend
-            .acquire_write_target(channel.backend_channel())
+            .acquire_write_target(channel.backend_channel)
             .map_err(EngineError::Backend)?;
 
         let mut lease = match lease {
@@ -152,12 +152,12 @@ where
             AcquireWrite::Busy => return Err(EngineError::WriteBusy),
         };
 
-        if lease.channel() != channel.backend_channel() {
+        if lease.channel() != channel.backend_channel {
             return Err(EngineError::BackendContractViolation(
                 super::BackendContractViolation::WrongChannelReturned,
             ));
         }
-        let expected_wire_bytes = (channel.len_pixels() as u32)
+        let expected_wire_bytes = (channel.len_pixels as u32)
             .checked_mul(3)
             .ok_or(EngineError::ConfigurationLimitExceeded)?;
         if lease.bytes_mut().len() != expected_wire_bytes as usize {
@@ -167,8 +167,8 @@ where
         }
 
         Ok(PreparedWrite {
-            layout: channel.layout(),
-            frame_phase: channel.frame_phase(),
+            layout: channel.layout,
+            frame_phase: channel.frame_phase,
             lease,
         })
     }

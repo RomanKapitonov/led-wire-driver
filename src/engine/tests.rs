@@ -61,9 +61,9 @@ fn registration_apply_commits_records_on_success() {
         .channels
         .record(0, engine.max_channels())
         .expect("channel should be registered after apply");
-    assert_eq!(channel.backend_channel(), BackendChannelId::new(0));
-    assert_eq!(channel.len_pixels(), 2);
-    assert_eq!(channel.layout(), PixelLayout::Grb);
+    assert_eq!(channel.backend_channel, BackendChannelId::new(0));
+    assert_eq!(channel.len_pixels, 2);
+    assert_eq!(channel.layout, PixelLayout::Grb);
     assert_eq!(handle.log().configured_specs.len(), 1);
 }
 
@@ -151,7 +151,7 @@ fn busy_submit_preserves_pending_and_phase_advances_only_on_started() {
             .channels
             .record(0, engine.max_channels())
             .expect("channel should stay registered")
-            .frame_phase(),
+            .frame_phase,
         FrameEpoch::ZERO
     );
 
@@ -172,7 +172,7 @@ fn busy_submit_preserves_pending_and_phase_advances_only_on_started() {
             .channels
             .record(0, engine.max_channels())
             .expect("channel should stay registered")
-            .frame_phase(),
+            .frame_phase,
         FrameEpoch::ZERO.wrapping_add(1)
     );
     assert_eq!(handle.log().submit_masks, vec![1, 1]);

@@ -33,58 +33,6 @@ impl PreparedBinding {
 
 type PreparedBindings = Vec<PreparedBinding, { DRIVER_MAX_CHANNELS }>;
 
-#[derive(Debug)]
-struct SetupDraft {
-    bindings: PreparedBindings,
-}
-
-impl SetupDraft {
-    const fn new() -> Self {
-        Self {
-            bindings: PreparedBindings::new(),
-        }
-    }
-
-    fn push_binding(&mut self, binding: PreparedBinding) -> Result<(), SetupBuildError> {
-        self.bindings
-            .push(binding)
-            .map_err(|_| SetupBuildError::CapacityExceeded)
-    }
-
-    fn validate(self) -> Result<PreparedSetup, SetupBuildError> {
-        let mut seen_logical = [false; DRIVER_MAX_CHANNELS];
-        let mut seen_backend = [false; BackendChannelId::CARDINALITY];
-
-        for binding in &self.bindings {
-            let logical_index = binding.logical_channel.as_index();
-            if logical_index >= DRIVER_MAX_CHANNELS {
-                return Err(SetupBuildError::InvalidLogicalChannel);
-            }
-            if seen_logical[logical_index] {
-                return Err(SetupBuildError::DuplicateLogicalChannel);
-            }
-            seen_logical[logical_index] = true;
-
-            let backend_index = binding.backend_channel.as_index();
-            if seen_backend[backend_index] {
-                return Err(SetupBuildError::DuplicateBackendChannel);
-            }
-            seen_backend[backend_index] = true;
-
-            if binding.pixels == 0 {
-                return Err(SetupBuildError::InvalidPixelCount);
-            }
-            let _wire_bytes = u32::from(binding.pixels)
-                .checked_mul(3)
-                .ok_or(SetupBuildError::OverflowingWireSize)?;
-        }
-
-        Ok(PreparedSetup {
-            bindings: self.bindings,
-        })
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SetupBuildError {
     /// More bindings were provided than the driver can store.
@@ -117,11 +65,39 @@ impl PreparedSetup {
     where
         I: IntoIterator<Item = PreparedBinding>,
     {
-        let mut draft = SetupDraft::new();
+        let mut buf = PreparedBindings::new();
         for binding in bindings {
-            draft.push_binding(binding)?;
+            buf.push(binding).map_err(|_| SetupBuildError::CapacityExceeded)?;
         }
-        draft.validate()
+
+        let mut seen_logical = [false; DRIVER_MAX_CHANNELS];
+        let mut seen_backend = [false; BackendChannelId::CARDINALITY];
+
+        for binding in &buf {
+            let logical_index = binding.logical_channel.as_index();
+            if logical_index >= DRIVER_MAX_CHANNELS {
+                return Err(SetupBuildError::InvalidLogicalChannel);
+            }
+            if seen_logical[logical_index] {
+                return Err(SetupBuildError::DuplicateLogicalChannel);
+            }
+            seen_logical[logical_index] = true;
+
+            let backend_index = binding.backend_channel.as_index();
+            if seen_backend[backend_index] {
+                return Err(SetupBuildError::DuplicateBackendChannel);
+            }
+            seen_backend[backend_index] = true;
+
+            if binding.pixels == 0 {
+                return Err(SetupBuildError::InvalidPixelCount);
+            }
+            let _wire_bytes = u32::from(binding.pixels)
+                .checked_mul(3)
+                .ok_or(SetupBuildError::OverflowingWireSize)?;
+        }
+
+        Ok(PreparedSetup { bindings: buf })
     }
 
     /// Returns the validated binding list as a stable read-only slice.

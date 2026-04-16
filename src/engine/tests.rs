@@ -143,7 +143,7 @@ fn busy_submit_preserves_pending_and_phase_advances_only_on_started() {
     handle.script_submit_result(Ok(StartTransfer::Busy));
     engine.service().expect("busy service should succeed");
 
-    let ready = engine.state.ready().expect("engine should be ready");
+    let ready = engine.ready().expect("engine should be ready");
     assert_eq!(ready.pending_mask.bits(), 1);
     assert_eq!(ready.transfer, TransferState::Idle);
     assert_eq!(
@@ -158,7 +158,7 @@ fn busy_submit_preserves_pending_and_phase_advances_only_on_started() {
     handle.script_submit_result(Ok(StartTransfer::Started));
     engine.service().expect("started service should succeed");
 
-    let ready = engine.state.ready().expect("engine should be ready");
+    let ready = engine.ready().expect("engine should be ready");
     assert_eq!(ready.pending_mask.bits(), 0);
     assert!(matches!(
         ready.transfer,
@@ -196,7 +196,7 @@ fn transfer_complete_event_clears_inflight_on_service() {
     engine.service().expect("service should start transfer");
 
     engine.on_backend_event(BackendEvent::TransferComplete);
-    let ready = engine.state.ready().expect("engine should be ready");
+    let ready = engine.ready().expect("engine should be ready");
     assert!(matches!(
         ready.transfer,
         TransferState::InFlight {
@@ -208,7 +208,7 @@ fn transfer_complete_event_clears_inflight_on_service() {
     engine
         .service()
         .expect("service should clear completed transfer");
-    let ready = engine.state.ready().expect("engine should stay ready");
+    let ready = engine.ready().expect("engine should stay ready");
     assert_eq!(ready.transfer, TransferState::Idle);
     assert_eq!(handle.log().events, vec![BackendEvent::TransferComplete]);
 }
@@ -219,7 +219,7 @@ fn transfer_complete_while_idle_is_latched_as_ingress_violation() {
 
     engine.on_backend_event(BackendEvent::TransferComplete);
 
-    let ready = engine.state.ready().expect("engine should be ready");
+    let ready = engine.ready().expect("engine should be ready");
     assert_eq!(ready.transfer, TransferState::Idle);
     assert!(ready.ingress_violation);
     assert_eq!(handle.log().events, vec![BackendEvent::TransferComplete]);
@@ -241,7 +241,7 @@ fn latched_ingress_violation_surfaces_once_on_service() {
         )
     );
 
-    let ready = engine.state.ready().expect("engine should stay ready");
+    let ready = engine.ready().expect("engine should stay ready");
     assert!(!ready.ingress_violation);
 
     engine

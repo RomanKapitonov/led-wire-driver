@@ -36,7 +36,7 @@ pub use error::{BackendContractViolation, EngineError, EngineStateExpectation};
 use self::{
     mask::ChannelMask,
     registration::{RegistrationPlan, RegistrationTable},
-    runtime::{EngineLifecycle, EngineState, ReadyState},
+    runtime::{EngineLifecycle, ReadyState},
 };
 use crate::{
     DRIVER_MAX_CHANNELS,
@@ -58,7 +58,7 @@ where
     backend: B,
     max_channels: usize,
     max_bytes_per_channel: Option<u32>,
-    state: EngineState,
+    lifecycle: EngineLifecycle,
     channels: RegistrationTable,
 }
 
@@ -77,15 +77,15 @@ where
             backend,
             max_channels,
             max_bytes_per_channel: capabilities.max_bytes_per_channel,
-            state: EngineState::new(),
+            lifecycle: EngineLifecycle::Uninitialized,
             channels: RegistrationTable::new(),
         }
     }
 
     pub fn init(&mut self) -> Result<(), EngineError> {
-        if matches!(self.state.lifecycle, EngineLifecycle::Uninitialized) {
+        if matches!(self.lifecycle, EngineLifecycle::Uninitialized) {
             self.backend.init().map_err(EngineError::Backend)?;
-            self.state.lifecycle = EngineLifecycle::Registering;
+            self.lifecycle = EngineLifecycle::Registering;
         }
         Ok(())
     }
@@ -95,7 +95,33 @@ where
     }
 
     pub(crate) fn is_configuration_committed(&self) -> bool {
-        self.state.is_ready()
+        self.is_ready()
+    }
+
+    pub(crate) fn is_registering(&self) -> bool {
+        matches!(self.lifecycle, EngineLifecycle::Registering)
+    }
+
+    pub(crate) fn is_ready(&self) -> bool {
+        matches!(self.lifecycle, EngineLifecycle::Ready(_))
+    }
+
+    pub(crate) fn ready(&self) -> Result<&ReadyState, EngineError> {
+        match &self.lifecycle {
+            EngineLifecycle::Ready(state) => Ok(state),
+            _ => Err(EngineError::InvalidState(
+                EngineStateExpectation::MustBeReady,
+            )),
+        }
+    }
+
+    pub(crate) fn ready_mut(&mut self) -> Result<&mut ReadyState, EngineError> {
+        match &mut self.lifecycle {
+            EngineLifecycle::Ready(state) => Ok(state),
+            _ => Err(EngineError::InvalidState(
+                EngineStateExpectation::MustBeReady,
+            )),
+        }
     }
 
     pub(crate) fn configure_prepared(
@@ -114,9 +140,9 @@ where
         setup: &PreparedSetup,
         driver_id: DriverId,
     ) -> Result<RegistrationPlan, EngineError> {
-        if !self.state.is_registering() {
+        if !self.is_registering() {
             debug_assert!(
-                self.state.is_registering(),
+                self.is_registering(),
                 "build_registration_plan called outside registration phase; typestate should prevent this"
             );
             return Err(EngineError::InvalidState(
@@ -136,9 +162,9 @@ where
         &mut self,
         plan: &RegistrationPlan,
     ) -> Result<(), EngineError> {
-        if !self.state.is_registering() {
+        if !self.is_registering() {
             debug_assert!(
-                self.state.is_registering(),
+                self.is_registering(),
                 "apply_registration_plan called outside registration phase; typestate should prevent this"
             );
             return Err(EngineError::InvalidState(
@@ -156,10 +182,10 @@ where
     }
 
     pub(crate) fn enter_ready_state(&mut self) {
-        if self.state.is_ready() {
+        if self.is_ready() {
             return;
         }
 
-        self.state.lifecycle = EngineLifecycle::Ready(ReadyState::new());
+        self.lifecycle = EngineLifecycle::Ready(ReadyState::new());
     }
 }

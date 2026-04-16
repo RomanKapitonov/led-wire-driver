@@ -32,7 +32,7 @@ pub(super) enum EngineLifecycle {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) enum TransferState {
+pub(crate) enum TransferState {
     /// No transfer currently accepted by backend transport.
     Idle,
     /// Backend accepted transfer start and completion is pending.
@@ -44,7 +44,7 @@ pub(super) enum TransferState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct ReadyState {
+pub(crate) struct ReadyState {
     /// Transfer ownership currently held by backend transport, if any.
     pub transfer: TransferState,
     /// Channels published since the last commit promotion.
@@ -75,44 +75,6 @@ impl ReadyState {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(super) struct EngineState {
-    pub lifecycle: EngineLifecycle,
-}
-
-impl EngineState {
-    pub const fn new() -> Self {
-        Self {
-            lifecycle: EngineLifecycle::Uninitialized,
-        }
-    }
-
-    pub const fn is_registering(&self) -> bool {
-        matches!(self.lifecycle, EngineLifecycle::Registering)
-    }
-
-    pub const fn is_ready(&self) -> bool {
-        matches!(self.lifecycle, EngineLifecycle::Ready(_))
-    }
-
-    pub fn ready(&self) -> Result<&ReadyState, EngineError> {
-        match &self.lifecycle {
-            EngineLifecycle::Ready(state) => Ok(state),
-            _ => Err(EngineError::InvalidState(
-                super::EngineStateExpectation::MustBeReady,
-            )),
-        }
-    }
-
-    pub fn ready_mut(&mut self) -> Result<&mut ReadyState, EngineError> {
-        match &mut self.lifecycle {
-            EngineLifecycle::Ready(state) => Ok(state),
-            _ => Err(EngineError::InvalidState(
-                super::EngineStateExpectation::MustBeReady,
-            )),
-        }
-    }
-}
 
 impl<B> LedEngine<B>
 where
@@ -124,7 +86,7 @@ where
     /// signals/events directly. Contract violations are therefore retained in
     /// ready-state and surfaced once on the next runtime operation.
     fn surface_latched_ingress_violation(&mut self) -> Result<(), EngineError> {
-        let ready = match self.state.ready_mut() {
+        let ready = match self.ready_mut() {
             Ok(ready) => ready,
             Err(_) => return Ok(()),
         };
@@ -178,22 +140,23 @@ where
         self.channels.record(channel_index, self.max_channels())?;
 
         let max_channels = self.max_channels();
-        let ready = self.state.ready_mut()?;
-        ready.dirty_mask =
-            self.channels
-                .mark_written(channel_index, max_channels, ready.dirty_mask)?;
+        let current_dirty = self.ready()?.dirty_mask;
+        let new_dirty = self
+            .channels
+            .mark_written(channel_index, max_channels, current_dirty)?;
+        self.ready_mut()?.dirty_mask = new_dirty;
         Ok(())
     }
 
     pub fn submit_dirty(&mut self) -> Result<(), EngineError> {
         self.surface_latched_ingress_violation()?;
-        let dirty = self.state.ready()?.dirty_mask;
+        let dirty = self.ready()?.dirty_mask;
         if dirty.is_empty() {
             return Ok(());
         }
 
         {
-            let ready = self.state.ready_mut()?;
+            let ready = self.ready_mut()?;
             ready.pending_mask = ChannelMask::from_bits(ready.pending_mask.bits() | dirty.bits());
             ready.dirty_mask = ChannelMask::ZERO;
         }
@@ -212,7 +175,7 @@ where
     ///   surfacing on the next runtime call
     pub fn on_backend_event(&mut self, event: BackendEvent) {
         self.backend.on_event(event);
-        if let Ok(ready) = self.state.ready_mut() {
+        if let Ok(ready) = self.ready_mut() {
             match event {
                 BackendEvent::TransferComplete => {
                     if let TransferState::InFlight {
@@ -241,7 +204,7 @@ where
     /// Returns `Ok(())` immediately if the engine is not in the ready state.
     /// Does nothing if no transfer is pending completion.
     fn complete_in_flight_if_ready(&mut self) -> Result<(), EngineError> {
-        let ready = match self.state.ready_mut() {
+        let ready = match self.ready_mut() {
             Ok(ready) => ready,
             Err(_) => return Ok(()),
         };
@@ -264,11 +227,11 @@ where
     ///   exact batch into `InFlight`
     fn try_start_pending_submit(&mut self) -> Result<(), EngineError> {
         let max_channels = self.max_channels();
-        let ready = match self.state.ready() {
+        let ready = match self.ready() {
             Ok(ready) => ready,
             Err(err) => {
                 debug_assert!(
-                    self.state.is_ready(),
+                    self.is_ready(),
                     "try_start_pending_submit reached with non-ready engine state"
                 );
                 return Err(err);
@@ -297,11 +260,11 @@ where
         {
             StartTransfer::Started => {
                 {
-                    let ready = match self.state.ready_mut() {
+                    let ready = match self.ready_mut() {
                         Ok(ready) => ready,
                         Err(err) => {
                             debug_assert!(
-                                self.state.is_ready(),
+                                self.is_ready(),
                                 "submit start observed with non-ready engine state"
                             );
                             return Err(err);

@@ -1,6 +1,6 @@
 use crate::{backend::BackendError, model::BackendChannelId};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ConfigureError {
     NoChannels,
     TooManyChannels,
@@ -9,7 +9,7 @@ pub enum ConfigureError {
     Backend(BackendError),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WriteError {
     InvalidChannel,
     Busy,
@@ -18,7 +18,7 @@ pub enum WriteError {
     LengthMismatch { expected: usize, actual: usize },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum ServiceError {
     Backend(BackendError),
     BackendContract,

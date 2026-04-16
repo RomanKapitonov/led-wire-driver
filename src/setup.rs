@@ -1,5 +1,6 @@
 use crate::model::{BackendChannelId, PixelLayout};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ChannelSetup {
     pub backend_channel: BackendChannelId,
     pub pixel_count: u16,

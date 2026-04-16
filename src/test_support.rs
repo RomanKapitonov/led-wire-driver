@@ -5,7 +5,7 @@ use std::{array, cell::RefCell, rc::Rc, vec, vec::Vec};
 
 use crate::{
     DRIVER_MAX_CHANNELS,
-    api::backend::{
+    backend::{
         AcquireWrite, BackendCapabilities, BackendChannelSpec, BackendError, BackendEvent,
         BackendSignal, BackendWriteLease, LedBackend, StartTransfer,
     },

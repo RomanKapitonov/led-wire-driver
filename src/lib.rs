@@ -37,10 +37,16 @@ extern crate std;
 /// capabilities.
 pub const DRIVER_MAX_CHANNELS: usize = 8;
 
-pub(crate) mod engine;
 pub(crate) mod model;
+pub mod backend;
+pub mod setup;
+pub mod error;
+pub mod driver;
+
+// Old modules kept until Tasks 1-9 complete
+pub(crate) mod engine;
 pub(crate) mod pack;
+pub mod api;
+
 #[cfg(test)]
 pub(crate) mod test_support;
-
-pub mod api;

@@ -75,7 +75,6 @@ impl ReadyState {
     }
 }
 
-
 impl<B> LedEngine<B>
 where
     B: LedBackend,

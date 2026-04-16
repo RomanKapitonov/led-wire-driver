@@ -98,11 +98,11 @@ where
         self.is_ready()
     }
 
-    pub(crate) fn is_registering(&self) -> bool {
+    pub(crate) const fn is_registering(&self) -> bool {
         matches!(self.lifecycle, EngineLifecycle::Registering)
     }
 
-    pub(crate) fn is_ready(&self) -> bool {
+    pub(crate) const fn is_ready(&self) -> bool {
         matches!(self.lifecycle, EngineLifecycle::Ready(_))
     }
 

@@ -1,22 +1,6 @@
 use super::{spatial::SpatialQuantizer, temporal::TemporalDither};
 use crate::model::{FrameEpoch, PixelLayout, Rgb48};
 
-/// Converts a driver-native sample into 16-bit linear wire channels.
-pub trait WireColor {
-    fn to_wire(&self) -> [u16; 3];
-    fn is_off(&self) -> bool;
-}
-
-impl WireColor for Rgb48 {
-    fn to_wire(&self) -> [u16; 3] {
-        [self.r, self.g, self.b]
-    }
-
-    fn is_off(&self) -> bool {
-        (self.r | self.g | self.b) == 0
-    }
-}
-
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum PackError {
     SourceLengthMismatch {
@@ -41,12 +25,11 @@ fn apply_temporal(value: u16, t_nudge: i16) -> u16 {
     value.saturating_add_signed(t_nudge)
 }
 
-fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_INDEX: usize>(
-    source: &[C],
+fn pack_kernel<TD, SQ, const R_INDEX: usize, const G_INDEX: usize, const B_INDEX: usize>(
+    source: &[Rgb48],
     target_bytes: &mut [u8],
     frame: FrameEpoch,
 ) where
-    C: WireColor + Copy,
     TD: TemporalDither + Default,
     SQ: SpatialQuantizer + Default,
 {
@@ -60,29 +43,27 @@ fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_IN
         .zip(target_bytes.chunks_exact_mut(3))
         .enumerate()
     {
-        if color.is_off() {
+        if (color.r | color.g | color.b) == 0 {
             chunk.fill(0);
             continue;
         }
 
-        let raw = color.to_wire();
-        let r = spatial_r.quantize(apply_temporal(raw[0], t_nudge), index);
-        let g = spatial_g.quantize(apply_temporal(raw[1], t_nudge), index);
-        let b = spatial_b.quantize(apply_temporal(raw[2], t_nudge), index);
+        let r = spatial_r.quantize(apply_temporal(color.r, t_nudge), index);
+        let g = spatial_g.quantize(apply_temporal(color.g, t_nudge), index);
+        let b = spatial_b.quantize(apply_temporal(color.b, t_nudge), index);
         chunk[R_INDEX] = r;
         chunk[G_INDEX] = g;
         chunk[B_INDEX] = b;
     }
 }
 
-pub fn pack_into_bytes<TD, SQ, C>(
-    source: &[C],
+pub fn pack_into_bytes<TD, SQ>(
+    source: &[Rgb48],
     target_bytes: &mut [u8],
     layout: PixelLayout,
     frame: FrameEpoch,
 ) -> Result<(), PackError>
 where
-    C: WireColor + Copy,
     TD: TemporalDither + Default,
     SQ: SpatialQuantizer + Default,
 {
@@ -103,12 +84,12 @@ where
     // the three indices directly as const generics. Keep the match pattern and
     // the type parameters in sync: [r, g, b] => pack_kernel::<..., r, g, b>.
     match layout_map(layout) {
-        [0, 1, 2] => pack_kernel::<TD, SQ, C, 0, 1, 2>(source, target_bytes, frame),
-        [0, 2, 1] => pack_kernel::<TD, SQ, C, 0, 2, 1>(source, target_bytes, frame),
-        [1, 0, 2] => pack_kernel::<TD, SQ, C, 1, 0, 2>(source, target_bytes, frame),
-        [1, 2, 0] => pack_kernel::<TD, SQ, C, 1, 2, 0>(source, target_bytes, frame),
-        [2, 0, 1] => pack_kernel::<TD, SQ, C, 2, 0, 1>(source, target_bytes, frame),
-        [2, 1, 0] => pack_kernel::<TD, SQ, C, 2, 1, 0>(source, target_bytes, frame),
+        [0, 1, 2] => pack_kernel::<TD, SQ, 0, 1, 2>(source, target_bytes, frame),
+        [0, 2, 1] => pack_kernel::<TD, SQ, 0, 2, 1>(source, target_bytes, frame),
+        [1, 0, 2] => pack_kernel::<TD, SQ, 1, 0, 2>(source, target_bytes, frame),
+        [1, 2, 0] => pack_kernel::<TD, SQ, 1, 2, 0>(source, target_bytes, frame),
+        [2, 0, 1] => pack_kernel::<TD, SQ, 2, 0, 1>(source, target_bytes, frame),
+        [2, 1, 0] => pack_kernel::<TD, SQ, 2, 1, 0>(source, target_bytes, frame),
         _ => unreachable!("layout_map always yields one of six channel permutations"),
     }
 
@@ -152,7 +133,7 @@ mod tests {
         let source = [Rgb48 { r: 0, g: 0, b: 0 }];
         let mut target = [0u8; 6];
 
-        let err = pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+        let err = pack_into_bytes::<NoopTemporal, ShiftSpatial>(
             &source,
             &mut target,
             PixelLayout::Rgb,
@@ -178,7 +159,7 @@ mod tests {
         }];
 
         let mut rgb = [0u8; 3];
-        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NoopTemporal, ShiftSpatial>(
             &source,
             &mut rgb,
             PixelLayout::Rgb,
@@ -188,7 +169,7 @@ mod tests {
         assert_eq!(rgb, [0x11, 0x22, 0x33]);
 
         let mut grb = [0u8; 3];
-        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NoopTemporal, ShiftSpatial>(
             &source,
             &mut grb,
             PixelLayout::Grb,
@@ -198,7 +179,7 @@ mod tests {
         assert_eq!(grb, [0x22, 0x11, 0x33]);
 
         let mut brg = [0u8; 3];
-        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NoopTemporal, ShiftSpatial>(
             &source,
             &mut brg,
             PixelLayout::Brg,
@@ -220,7 +201,7 @@ mod tests {
         ];
         let mut target = [0xFFu8; 6];
 
-        pack_into_bytes::<NoopTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NoopTemporal, ShiftSpatial>(
             &source,
             &mut target,
             PixelLayout::Rgb,
@@ -237,7 +218,7 @@ mod tests {
         let source = [Rgb48 { r: 0, g: 0, b: 0 }];
         let mut target = [0xAAu8; 3];
 
-        pack_into_bytes::<NudgeTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NudgeTemporal, ShiftSpatial>(
             &source,
             &mut target,
             PixelLayout::Rgb,
@@ -254,7 +235,7 @@ mod tests {
         }];
         let mut target = [0u8; 3];
 
-        pack_into_bytes::<NudgeTemporal, ShiftSpatial, Rgb48>(
+        pack_into_bytes::<NudgeTemporal, ShiftSpatial>(
             &source,
             &mut target,
             PixelLayout::Rgb,

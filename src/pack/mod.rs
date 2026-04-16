@@ -102,7 +102,7 @@ pub(crate) fn pack_rgb48_active(
     layout: PixelLayout,
     frame: FrameEpoch,
 ) -> Result<(), PackError> {
-    pipeline::pack_into_bytes::<ActiveTemporalDither, ActiveSpatialQuantizer, Rgb48>(
+    pipeline::pack_into_bytes::<ActiveTemporalDither, ActiveSpatialQuantizer>(
         source, target, layout, frame,
     )
 }

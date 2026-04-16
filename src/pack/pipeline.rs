@@ -37,22 +37,8 @@ const fn layout_map(layout: PixelLayout) -> [usize; 3] {
     }
 }
 
-fn temporal_offset<TD>(frame: FrameEpoch) -> i16
-where
-    TD: TemporalDither + Default,
-{
-    TD::default().offset(frame)
-}
-
 fn apply_temporal(value: u16, t_nudge: i16) -> u16 {
     value.saturating_add_signed(t_nudge)
-}
-
-fn quantize_channel<SQ>(quantizer: &mut SQ, value: u16, index: usize) -> u8
-where
-    SQ: SpatialQuantizer,
-{
-    quantizer.quantize(value, index)
 }
 
 fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_INDEX: usize>(
@@ -64,7 +50,7 @@ fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_IN
     TD: TemporalDither + Default,
     SQ: SpatialQuantizer + Default,
 {
-    let t_nudge = temporal_offset::<TD>(frame);
+    let t_nudge = TD::default().offset(frame);
     let mut spatial_r = SQ::default();
     let mut spatial_g = SQ::default();
     let mut spatial_b = SQ::default();
@@ -80,9 +66,9 @@ fn pack_kernel<TD, SQ, C, const R_INDEX: usize, const G_INDEX: usize, const B_IN
         }
 
         let raw = color.to_wire();
-        let r = quantize_channel(&mut spatial_r, apply_temporal(raw[0], t_nudge), index);
-        let g = quantize_channel(&mut spatial_g, apply_temporal(raw[1], t_nudge), index);
-        let b = quantize_channel(&mut spatial_b, apply_temporal(raw[2], t_nudge), index);
+        let r = spatial_r.quantize(apply_temporal(raw[0], t_nudge), index);
+        let g = spatial_g.quantize(apply_temporal(raw[1], t_nudge), index);
+        let b = spatial_b.quantize(apply_temporal(raw[2], t_nudge), index);
         chunk[R_INDEX] = r;
         chunk[G_INDEX] = g;
         chunk[B_INDEX] = b;

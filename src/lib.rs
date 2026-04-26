@@ -26,3 +26,5 @@ pub use setup::ChannelSetup;
 pub use error::{ConfigureError, ServiceError, WriteError};
 
 pub use driver::{ChannelHandle, ChannelHandles, ChannelWriter, ConfiguringDriver, Driver};
+
+pub use driver::pack::{pack_rgb48_active, PackError};

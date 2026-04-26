@@ -1,5 +1,5 @@
 mod engine;
-mod pack;
+pub mod pack;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 

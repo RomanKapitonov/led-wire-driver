@@ -2,7 +2,7 @@ mod pipeline;
 mod spatial;
 mod temporal;
 
-pub(super) use pipeline::PackError;
+pub use pipeline::PackError;
 
 use crate::model::{FrameEpoch, PixelLayout, Rgb48};
 
@@ -25,7 +25,7 @@ pub(super) type ActiveSpatialQuantizer = spatial::NoSpatialQuantizer;
 #[cfg(all(feature = "pack-sq-bayer", not(feature = "pack-sq-none")))]
 pub(super) type ActiveSpatialQuantizer = spatial::SpatialBayerQuantizer;
 
-pub(super) fn pack_rgb48_active(
+pub fn pack_rgb48_active(
     source: &[Rgb48],
     target: &mut [u8],
     layout: PixelLayout,

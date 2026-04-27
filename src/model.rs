@@ -23,6 +23,10 @@ pub struct FrameEpoch(u32);
 impl FrameEpoch {
     pub const ZERO: Self = Self(0);
 
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
     #[cfg(feature = "pack-td-bayer")]
     pub const fn as_u32(self) -> u32 {
         self.0
@@ -76,11 +80,24 @@ impl BackendChannelId {
         Self(raw)
     }
 
-    pub const fn as_u8(self) -> u8 {
-        self.0
-    }
-
     pub const fn as_index(self) -> usize {
         self.0 as usize
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backend_channel_id_roundtrip() {
+        let id = BackendChannelId::new(42);
+        assert_eq!(id.as_index(), 42);
+    }
+
+    #[test]
+    fn frame_epoch_wrapping_add() {
+        let epoch = FrameEpoch::from_raw(u32::MAX);
+        assert_eq!(epoch.wrapping_add(1), FrameEpoch::from_raw(0));
     }
 }

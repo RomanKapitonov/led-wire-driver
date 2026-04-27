@@ -37,7 +37,7 @@
 //!   batch has been completed by the driver runtime.
 //! - reporting `BackendEvent::TransferComplete` while no transfer is in flight
 //!   is a backend contract violation; the engine may latch that violation and
-//!   surface it on a later runtime call as `RuntimeError::BackendContract`.
+//!   surface it on a later runtime call as a `ServiceError::BackendContract`.
 
 use crate::model::{BackendChannelId, PixelLayout};
 
@@ -73,26 +73,14 @@ pub struct BackendChannelSpec {
 }
 
 /// Safe lease contract selected for the long-term backend write boundary.
-///
-/// Contract:
-/// - `bytes_mut()` exposes the exact writable target for this acquired write.
-/// - the returned borrow must not outlive the lease object.
-/// - `publish()` transfers the acquired write into backend-pending state.
-/// - if the lease is dropped without successful publish, backend-local cleanup
-///   must abort the write so the channel becomes retryable.
 pub trait BackendWriteLease {
     /// Returns the backend channel identity this live lease was acquired for.
     fn channel(&self) -> BackendChannelId;
 
     /// Exposes the exact writable backend-owned target for this acquired write.
-    ///
-    /// The returned slice borrow must not outlive the lease object.
     fn bytes_mut(&mut self) -> &mut [u8];
 
     /// Publishes this acquired write into backend-pending state.
-    ///
-    /// After successful publish, dropping the lease must no longer abort the
-    /// acquired write.
     fn publish(&mut self) -> Result<(), BackendError>;
 }
 
@@ -113,9 +101,6 @@ pub struct BackendCapabilities {
     /// Maximum number of backend channels the driver may register.
     pub max_channels: usize,
     /// Structural per-channel byte limit enforced during registration staging.
-    ///
-    /// The driver computes `pixels * 3` for each prepared binding and rejects
-    /// configurations that exceed this limit before backend mutation.
     pub max_bytes_per_channel: Option<u32>,
 }
 
@@ -125,35 +110,18 @@ pub trait LedBackend {
         Self: 'a;
 
     /// Performs backend-local initialization before registration begins.
-    ///
-    /// This is the only failure point during `Driver::new()`: callers should
-    /// see `DriverInitError::Backend` if initialization does not succeed.
     fn init(&mut self) -> Result<(), BackendError>;
 
     /// Returns structural limits that shape what the driver may register.
-    ///
-    /// These capabilities are read during engine construction/registration
-    /// planning and are expected to remain stable for the lifetime of the
-    /// backend instance.
     fn capabilities(&self) -> BackendCapabilities;
 
     /// Applies the full logical-channel configuration for this backend.
-    ///
-    /// The call must behave as one configuration unit from the driver's
-    /// perspective:
-    /// - on success the backend is fully configured for the given set,
-    /// - on failure the backend must not require driver recreation just to
-    ///   clear partial registration state,
-    /// - retry after failure must remain possible unless the backend reports a
-    ///   hard fatal condition.
     fn configure_channels(&mut self, specs: &[BackendChannelSpec]) -> Result<(), BackendError> {
         let _ = specs;
         Ok(())
     }
 
     /// Acquires a writable backend-owned target for the given channel.
-    ///
-    /// This is the preferred transport-agnostic write path.
     fn acquire_write_target(
         &mut self,
         channel: BackendChannelId,
@@ -163,27 +131,11 @@ pub trait LedBackend {
     }
 
     /// Submits a committed logical channel mask.
-    ///
-    /// Completion ownership:
-    /// - `StartTransfer::Started` means this exact submission batch was
-    ///   accepted by transport.
-    /// - `StartTransfer::Busy` means no batch was accepted and caller should
-    ///   retry from idle without losing pending mask.
     fn submit_channels(&mut self, mask_bits: u32) -> Result<StartTransfer, BackendError>;
 
     /// Backend-private low-level ingress hook.
-    ///
-    /// This is intended for transport/backend-local notifications before they
-    /// are translated into logical backend events. The driver does not attach
-    /// any meaning to the signal token beyond forwarding it to the backend.
     fn on_signal(&mut self, signal: BackendSignal);
 
     /// Completion/event hook for backend-owned runtime state.
-    ///
-    /// Contract:
-    /// - `BackendEvent::TransferComplete` must only be emitted for a transfer
-    ///   batch previously accepted via `StartTransfer::Started`
-    /// - emitting completion while the driver has no in-flight transfer is a
-    ///   backend contract violation
     fn on_event(&mut self, _event: BackendEvent) {}
 }

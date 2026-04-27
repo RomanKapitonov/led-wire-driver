@@ -99,7 +99,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pack::{spatial::SpatialQuantizer, temporal::TemporalDither};
+    use super::super::{spatial::SpatialQuantizer, temporal::TemporalDither};
 
     #[derive(Default)]
     struct NoopTemporal;

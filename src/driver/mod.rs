@@ -3,7 +3,9 @@ pub mod pack;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use engine::{EngineError, LedEngine, channel_state::ChannelState, registration::RegistrationTable};
+use engine::{
+    EngineError, LedEngine, channel_state::ChannelState, registration::RegistrationTable,
+};
 
 use crate::{
     DRIVER_MAX_CHANNELS,
@@ -108,7 +110,9 @@ impl ConfiguringDriver {
         for setup in channels {
             let idx = setup.backend_channel.as_index();
             if seen[idx] {
-                return Err(ConfigureError::DuplicateBackendChannel(setup.backend_channel));
+                return Err(ConfigureError::DuplicateBackendChannel(
+                    setup.backend_channel,
+                ));
             }
             seen[idx] = true;
 
@@ -148,13 +152,19 @@ impl ConfiguringDriver {
                 setup.pixel_count,
                 setup.layout,
             ));
-            handle_arr[slot] = Some(ChannelHandle { driver_id, channel_index: slot });
+            handle_arr[slot] = Some(ChannelHandle {
+                driver_id,
+                channel_index: slot,
+            });
         }
 
         let count = channels.len();
         let table = RegistrationTable::new(records, count);
         let engine = LedEngine::new(backend, max_channels, table);
-        Ok((Driver { engine, driver_id }, ChannelHandles::new(handle_arr, count)))
+        Ok((
+            Driver { engine, driver_id },
+            ChannelHandles::new(handle_arr, count),
+        ))
     }
 }
 
@@ -230,9 +240,13 @@ fn map_write_err(e: EngineError) -> WriteError {
         EngineError::WriteBusy => WriteError::Busy,
         EngineError::Backend(e) => WriteError::Backend(e),
         EngineError::BackendContractViolation(_) => WriteError::BackendContract,
-        EngineError::SourceLengthMismatch { expected_pixels, actual_pixels } => {
-            WriteError::LengthMismatch { expected: expected_pixels, actual: actual_pixels }
-        }
+        EngineError::SourceLengthMismatch {
+            expected_pixels,
+            actual_pixels,
+        } => WriteError::LengthMismatch {
+            expected: expected_pixels,
+            actual: actual_pixels,
+        },
     }
 }
 
@@ -256,7 +270,10 @@ mod tests {
     };
 
     fn caps() -> BackendCapabilities {
-        BackendCapabilities { max_channels: DRIVER_MAX_CHANNELS, max_bytes_per_channel: None }
+        BackendCapabilities {
+            max_channels: DRIVER_MAX_CHANNELS,
+            max_bytes_per_channel: None,
+        }
     }
 
     fn ch(backend: u8, pixels: u16) -> ChannelSetup {
@@ -281,7 +298,10 @@ mod tests {
     #[test]
     fn configure_empty_returns_error() {
         let (backend, _) = FakeBackend::new(caps());
-        let err = ConfiguringDriver::new().configure(&[], backend).err().unwrap();
+        let err = ConfiguringDriver::new()
+            .configure(&[], backend)
+            .err()
+            .unwrap();
         assert_eq!(err, ConfigureError::NoChannels);
     }
 
@@ -292,7 +312,10 @@ mod tests {
             .configure(&[ch(0, 5), ch(0, 5)], backend)
             .err()
             .unwrap();
-        assert_eq!(err, ConfigureError::DuplicateBackendChannel(BackendChannelId::new(0)));
+        assert_eq!(
+            err,
+            ConfigureError::DuplicateBackendChannel(BackendChannelId::new(0))
+        );
     }
 
     #[test]
@@ -327,7 +350,11 @@ mod tests {
             .configure(&[ch(0, 2)], backend)
             .unwrap();
         let h = *handles.get(0).unwrap();
-        let colors = [Rgb48 { r: 65535, g: 0, b: 0 }; 2];
+        let colors = [Rgb48 {
+            r: 65535,
+            g: 0,
+            b: 0,
+        }; 2];
         driver.channel(&h).unwrap().write_rgb48(&colors).unwrap();
         driver.commit().unwrap();
         driver.service().unwrap();
@@ -350,6 +377,12 @@ mod tests {
             .write_rgb48(&[Rgb48 { r: 0, g: 0, b: 0 }; 5])
             .err()
             .unwrap();
-        assert!(matches!(err, WriteError::LengthMismatch { expected: 10, actual: 5 }));
+        assert!(matches!(
+            err,
+            WriteError::LengthMismatch {
+                expected: 10,
+                actual: 5
+            }
+        ));
     }
 }

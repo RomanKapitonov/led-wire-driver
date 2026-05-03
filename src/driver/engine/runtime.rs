@@ -1,5 +1,4 @@
 use super::{EngineError, LedEngine, error::BackendContractViolation, mask::ChannelMask};
-
 use crate::backend::{BackendEvent, BackendSignal, LedBackend, StartTransfer};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -55,7 +54,10 @@ impl<B: LedBackend> LedEngine<B> {
         self.backend.on_event(event);
         match event {
             BackendEvent::TransferComplete => match &mut self.ready.transfer {
-                TransferState::InFlight { dma_complete_pending, .. } => {
+                TransferState::InFlight {
+                    dma_complete_pending,
+                    ..
+                } => {
                     *dma_complete_pending = true;
                 }
                 TransferState::Idle => {
@@ -71,8 +73,10 @@ impl<B: LedBackend> LedEngine<B> {
     ) -> Result<(), EngineError> {
         self.surface_latched_violation()?;
         self.channels.record(channel_index)?;
-        self.ready.dirty_mask =
-            self.ready.dirty_mask.union(ChannelMask::single(channel_index));
+        self.ready.dirty_mask = self
+            .ready
+            .dirty_mask
+            .union(ChannelMask::single(channel_index));
         Ok(())
     }
 
@@ -94,7 +98,11 @@ impl<B: LedBackend> LedEngine<B> {
     }
 
     fn complete_in_flight_if_ready(&mut self) {
-        if let TransferState::InFlight { dma_complete_pending: true, .. } = self.ready.transfer {
+        if let TransferState::InFlight {
+            dma_complete_pending: true,
+            ..
+        } = self.ready.transfer
+        {
             self.ready.transfer = TransferState::Idle;
         }
     }
@@ -130,7 +138,11 @@ impl<B: LedBackend> LedEngine<B> {
         let Some(pending) = self.compute_pending_batch() else {
             return Ok(());
         };
-        match self.backend.submit_channels(pending.bits()).map_err(EngineError::Backend)? {
+        match self
+            .backend
+            .submit_channels(pending.bits())
+            .map_err(EngineError::Backend)?
+        {
             StartTransfer::Started => self.on_submit_started(pending),
             StartTransfer::Busy => Ok(()),
         }

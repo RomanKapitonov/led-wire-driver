@@ -15,18 +15,20 @@ where
 }
 
 impl<B: LedBackend> PreparedWrite<'_, B> {
-    pub(in crate::driver) fn pack_rgb48_active(&mut self, source: &[Rgb48]) -> Result<(), EngineError> {
+    pub(in crate::driver) fn pack_rgb48_active(
+        &mut self,
+        source: &[Rgb48],
+    ) -> Result<(), EngineError> {
         let target = self.lease.bytes_mut();
-        pack_rgb48_active(source, target, self.layout, self.frame_phase).map_err(
-            |err| match err {
-                PackError::SourceLengthMismatch { source_pixels, target_pixels } => {
-                    EngineError::SourceLengthMismatch {
-                        expected_pixels: target_pixels,
-                        actual_pixels: source_pixels,
-                    }
-                }
+        pack_rgb48_active(source, target, self.layout, self.frame_phase).map_err(|err| match err {
+            PackError::SourceLengthMismatch {
+                source_pixels,
+                target_pixels,
+            } => EngineError::SourceLengthMismatch {
+                expected_pixels: target_pixels,
+                actual_pixels: source_pixels,
             },
-        )
+        })
     }
 
     pub(in crate::driver) fn publish(&mut self) -> Result<(), EngineError> {

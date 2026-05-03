@@ -98,8 +98,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::super::{spatial::SpatialQuantizer, temporal::TemporalDither};
+    use super::{
+        super::{spatial::SpatialQuantizer, temporal::TemporalDither},
+        *,
+    };
 
     #[derive(Default)]
     struct NoopTemporal;

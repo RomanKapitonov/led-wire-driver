@@ -13,5 +13,8 @@ pub(in crate::driver) enum EngineError {
     WriteBusy,
     Backend(BackendError),
     BackendContractViolation(BackendContractViolation),
-    SourceLengthMismatch { expected_pixels: usize, actual_pixels: usize },
+    SourceLengthMismatch {
+        expected_pixels: usize,
+        actual_pixels: usize,
+    },
 }

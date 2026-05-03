@@ -1,19 +1,21 @@
 pub(in crate::driver) mod channel_state;
-pub(in crate::driver) mod mask;
 mod error;
+pub(in crate::driver) mod mask;
+mod prepared_write;
 pub(in crate::driver) mod registration;
 pub(in crate::driver) mod runtime;
-mod prepared_write;
 
-pub(in crate::driver) use error::{BackendContractViolation, EngineError};
 use channel_state::ChannelState;
+pub(in crate::driver) use error::{BackendContractViolation, EngineError};
 use mask::ChannelMask;
 use prepared_write::PreparedWrite;
 use registration::RegistrationTable;
 use runtime::ReadyState;
 
-use crate::DRIVER_MAX_CHANNELS;
-use crate::backend::{AcquireWrite, BackendWriteLease, LedBackend};
+use crate::{
+    DRIVER_MAX_CHANNELS,
+    backend::{AcquireWrite, BackendWriteLease, LedBackend},
+};
 
 const _: () = assert!(DRIVER_MAX_CHANNELS <= ChannelMask::CAPACITY_BITS);
 
@@ -30,7 +32,12 @@ impl<B: LedBackend> LedEngine<B> {
         max_channels: usize,
         channels: RegistrationTable,
     ) -> Self {
-        Self { backend, max_channels, channels, ready: ReadyState::new() }
+        Self {
+            backend,
+            max_channels,
+            channels,
+            ready: ReadyState::new(),
+        }
     }
 
     pub(in crate::driver) fn acquire_prepared_write(
@@ -67,7 +74,11 @@ impl<B: LedBackend> LedEngine<B> {
             ));
         }
 
-        Ok(PreparedWrite { layout, frame_phase, lease })
+        Ok(PreparedWrite {
+            layout,
+            frame_phase,
+            lease,
+        })
     }
 }
 
@@ -108,7 +119,11 @@ mod tests {
     #[test]
     fn write_and_publish_marks_dirty() {
         let mut engine = make_engine(1);
-        let colors = [Rgb48 { r: 65535, g: 0, b: 0 }];
+        let colors = [Rgb48 {
+            r: 65535,
+            g: 0,
+            b: 0,
+        }];
         {
             let mut pw = engine.acquire_prepared_write(0).unwrap();
             pw.pack_rgb48_active(&colors).unwrap();
@@ -121,7 +136,11 @@ mod tests {
     #[test]
     fn submit_dirty_promotes_to_pending() {
         let mut engine = make_engine(1);
-        let colors = [Rgb48 { r: 0, g: 0, b: 65535 }];
+        let colors = [Rgb48 {
+            r: 0,
+            g: 0,
+            b: 65535,
+        }];
         {
             let mut pw = engine.acquire_prepared_write(0).unwrap();
             pw.pack_rgb48_active(&colors).unwrap();
@@ -136,7 +155,11 @@ mod tests {
     #[test]
     fn service_starts_transfer_when_pending() {
         let mut engine = make_engine(2);
-        let colors = [Rgb48 { r: 100, g: 200, b: 0 }; 2];
+        let colors = [Rgb48 {
+            r: 100,
+            g: 200,
+            b: 0,
+        }; 2];
         {
             let mut pw = engine.acquire_prepared_write(0).unwrap();
             pw.pack_rgb48_active(&colors).unwrap();
@@ -145,6 +168,9 @@ mod tests {
         engine.mark_channel_published(0).unwrap();
         engine.submit_dirty().unwrap();
         engine.service().unwrap();
-        assert!(matches!(engine.ready.transfer, runtime::TransferState::InFlight { .. }));
+        assert!(matches!(
+            engine.ready.transfer,
+            runtime::TransferState::InFlight { .. }
+        ));
     }
 }

@@ -43,7 +43,11 @@ mod tests {
 
     #[test]
     fn pack_single_pixel_grb_layout() {
-        let source = [Rgb48 { r: 0xFFFF, g: 0x0000, b: 0x0000 }];
+        let source = [Rgb48 {
+            r: 0xFFFF,
+            g: 0x0000,
+            b: 0x0000,
+        }];
         let mut target = [0u8; 3];
         pack_rgb48_active(&source, &mut target, PixelLayout::Grb, FrameEpoch::ZERO).unwrap();
         assert_eq!(target[0], 0x00);

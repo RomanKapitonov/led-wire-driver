@@ -16,7 +16,10 @@ impl ChannelMask {
     /// Returns a mask with exactly one bit set at `index`.
     /// Caller must ensure `index < DRIVER_MAX_CHANNELS <= CAPACITY_BITS`.
     pub(in crate::driver) fn single(index: usize) -> Self {
-        debug_assert!(index < Self::CAPACITY_BITS, "channel index exceeds mask capacity");
+        debug_assert!(
+            index < Self::CAPACITY_BITS,
+            "channel index exceeds mask capacity"
+        );
         Self(1u32 << index)
     }
 
@@ -50,7 +53,10 @@ mod tests {
 
     #[test]
     fn union_combines_bits() {
-        assert_eq!(ChannelMask::single(0).union(ChannelMask::single(1)).bits(), 3u32);
+        assert_eq!(
+            ChannelMask::single(0).union(ChannelMask::single(1)).bits(),
+            3u32
+        );
     }
 
     #[test]

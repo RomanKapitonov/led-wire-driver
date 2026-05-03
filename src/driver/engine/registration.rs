@@ -1,8 +1,4 @@
-use super::{
-    EngineError,
-    channel_state::ChannelState,
-    mask::ChannelMask,
-};
+use super::{EngineError, channel_state::ChannelState, mask::ChannelMask};
 use crate::DRIVER_MAX_CHANNELS;
 
 pub(in crate::driver) struct RegistrationTable {
@@ -22,7 +18,11 @@ impl RegistrationTable {
                 mask = mask.union(ChannelMask::single(i));
             }
         }
-        Self { records, registered_mask: mask, count }
+        Self {
+            records,
+            registered_mask: mask,
+            count,
+        }
     }
 
     pub(in crate::driver) fn record(&self, index: usize) -> Result<&ChannelState, EngineError> {
@@ -32,7 +32,10 @@ impl RegistrationTable {
             .ok_or(EngineError::InvalidChannel)
     }
 
-    pub(in crate::driver) fn record_mut(&mut self, index: usize) -> Result<&mut ChannelState, EngineError> {
+    pub(in crate::driver) fn record_mut(
+        &mut self,
+        index: usize,
+    ) -> Result<&mut ChannelState, EngineError> {
         self.records
             .get_mut(index)
             .and_then(|s| s.as_mut())

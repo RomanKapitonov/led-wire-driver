@@ -26,12 +26,16 @@ pub enum ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::format;
+
+    use super::*;
 
     #[test]
     fn configure_error_debug() {
-        let _ = format!("{:?}", ConfigureError::DuplicateBackendChannel(BackendChannelId::new(0)));
+        let _ = format!(
+            "{:?}",
+            ConfigureError::DuplicateBackendChannel(BackendChannelId::new(0))
+        );
     }
 
     #[test]
